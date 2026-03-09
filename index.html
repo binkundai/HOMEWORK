@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>家庭作业布置系统 🌟</title>
+  <!-- 引入 Tailwind CSS (让界面好看) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- 引入 Vue 3 -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <!-- 引入 Supabase JS -->
+  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+</head>
+<body class="bg-gray-100 p-4 font-sans">
+  <div id="app" class="max-w-md mx-auto">
+    <h1 class="text-2xl font-bold text-center text-blue-600 mb-6">🏆 家庭作业布置系统</h1>
+
+    <!-- 角色切换 -->
+    <div class="flex justify-center space-x-2 mb-6">
+      <button @click="role = 'admin'" :class="role==='admin'?'bg-blue-500 text-white':'bg-white text-gray-700'" class="px-4 py-2 rounded shadow">管理员</button>
+      <button @click="role = 'dudu'" :class="role==='dudu'?'bg-green-500 text-white':'bg-white text-gray-700'" class="px-4 py-2 rounded shadow">👦 嘟嘟</button>
+      <button @click="role = 'bobo'" :class="role==='bobo'?'bg-yellow-500 text-white':'bg-white text-gray-700'" class="px-4 py-2 rounded shadow">🧒 啵啵</button>
+    </div>
+
+    <!-- 统计看板 -->
+    <div class="bg-white rounded-lg shadow p-4 mb-6 flex justify-around text-center">
+      <div v-for="kid in kids" :key="kid.id">
+        <div class="text-lg font-bold">{{ kid.name }}</div>
+        <div class="text-2xl text-orange-500">🌟 {{ kid.total_stars }}</div>
+      </div>
+    </div>
+
+    <!-- ================= 管理员视图 ================= -->
+    <div v-if="role === 'admin'" class="bg-white rounded-lg shadow p-4">
+      <h2 class="text-lg font-bold mb-4">布置新任务</h2>
+      <div class="space-y-3">
+        <select v-model="newTask.kid_id" class="w-full border rounded p-2">
+          <option value="dudu">指派给：嘟嘟</option>
+          <option value="bobo">指派给：啵啵</option>
+        </select>
+        <input v-model="newTask.task_name" type="text" placeholder="任务内容 (如: 阅读20分钟)" class="w-full border rounded p-2">
+        <div class="flex items-center space-x-2">
+          <span>奖励星星数:</span>
+          <input v-model="newTask.stars" type="number" min="1" max="10" class="w-16 border rounded p-1 text-center">
+        </div>
+        <button @click="addTask" class="w-full bg-blue-500 text-white font-bold py-2 rounded hover:bg-blue-600">发布任务</button>
+      </div>
+    </div>
+
+    <!-- ================= 孩子视图 (嘟嘟 / 啵啵) ================= -->
+    <div v-else class="bg-white rounded-lg shadow p-4">
+      <h2 class="text-lg font-bold mb-4">{{ role === 'dudu' ? '嘟嘟' : '啵啵' }} 的今日任务</h2>
+      <div v-if="myTasks.length === 0" class="text-gray-500 text-center py-4">今天还没有任务哦，去玩吧！</div>
+      
+      <div v-for="task in myTasks" :key="task.id" class="border-b last:border-0 py-3 flex justify-between items-center">
+        <div>
+          <div class="text-gray-800 font-medium" :class="{'line-through text-gray-400': task.is_completed}">{{ task.task_name }}</div>
+          <div class="text-sm text-orange-500">奖励: {{ task.stars }} 颗星</div>
+        </div>
+        <div>
+          <button v-if="!task.is_completed" @click="completeTask(task)" class="bg-green-500 text-white px-3 py-1 rounded shadow text-sm">✅ 完成</button>
+          <span v-else class="text-gray-400 font-bold">已完成</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ================= 配置区 (请替换为你自己的) =================
+    const SUPABASE_URL = 'YOUR_SUPABASE_URL'; 
+    const SUPABASE_KEY = 'YOUR_SUPABASE_ANON_KEY';
+    
+    const WXPUSHER_APP_TOKEN = 'YOUR_WXPUSHER_APP_TOKEN';
+    // 收到通知的微信 UID，可以填多个（比如你和爱人的UID）
+    const WXPUSHER_UIDS =['YOUR_UID_1', 'YOUR_UID_2']; 
+    // ==============================================================
+
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    const { createApp, ref, computed, onMounted } = Vue;
+
+    createApp({
+      setup() {
+        const role = ref('admin'); // admin, dudu, bobo
+        const kids = ref([]);
+        const tasks = ref([]);
+        const newTask = ref({ kid_id: 'dudu', task_name: '', stars: 1 });
+
+        // 过滤出当前选择孩子的任务
+        const myTasks = computed(() => {
+          return tasks.value.filter(t => t.kid_id === role.value);
+        });
+
+        // 从数据库加载数据
+        const loadData = async () => {
+          const { data: kidsData } = await supabase.from('kids').select('*').order('id');
+          kids.value = kidsData ||[];
+          // 只加载当天的任务
+          const { data: tasksData } = await supabase.from('tasks').select('*').order('created_at', { ascending: false });
+          tasks.value = tasksData ||[];
+        };
+
+        // 添加任务
+        const addTask = async () => {
+          if (!newTask.value.task_name) return alert("请填写任务内容！");
+          await supabase.from('tasks').insert([newTask.value]);
+          newTask.value.task_name = ''; // 清空输入框
+          alert("任务发布成功！");
+          loadData();
+        };
+
+        // 孩子完成任务
+        const completeTask = async (task) => {
+          // 1. 在数据库中标记任务为完成
+          await supabase.from('tasks').update({ is_completed: true }).eq('id', task.id);
+          
+          // 2. 给对应的小孩加星星
+          const kid = kids.value.find(k => k.id === task.kid_id);
+          const newStars = kid.total_stars + task.stars;
+          await supabase.from('kids').update({ total_stars: newStars }).eq('id', task.kid_id);
+
+          // 3. 推送微信消息
+          const kidName = task.kid_id === 'dudu' ? '嘟嘟' : '啵啵';
+          sendWechatMsg(`🎉 喜报！${kidName} 刚刚完成了任务【${task.task_name}】！\n🌟 获得奖励：${task.stars} 颗星星。\n🏆 当前总星星数：${newStars} 颗。`);
+          
+          loadData();
+        };
+
+        // 发送微信推送 (WxPusher API)
+        const sendWechatMsg = (content) => {
+          fetch('https://wxpusher.zjiecode.com/api/send/message', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              appToken: WXPUSHER_APP_TOKEN,
+              content: content,
+              contentType: 1, // 1表示文字
+              uids: WXPUSHER_UIDS
+            })
+          });
+        };
+
+        onMounted(() => {
+          loadData();
+        });
+
+        return { role, kids, newTask, myTasks, addTask, completeTask };
+      }
+    }).mount('#app');
+  </script>
+</body>
+</html>
