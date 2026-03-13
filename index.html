@@ -5,208 +5,221 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>儿童作业布置系统</title>
     <style>
-        body { font-family: sans-serif; padding: 20px; max-width: 600px; margin: auto; }
-        .hidden { display: none; }
-        .login-box, .app-box { border: 1px solid #ccc; padding: 20px; border-radius: 8px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-        button, input, select { padding: 8px; margin-top: 10px; }
-        .camera-btn { background-color: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer;}
+        :root { --primary-color: #4a90e2; --secondary-color: #f5f7fa; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 20px; max-width: 800px; margin: auto; background-color: var(--secondary-color); color: #333; }
+        .hidden { display: none !important; }
+        .card { background: white; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); padding: 25px; margin-bottom: 20px; }
+        h2 { margin-top: 0; color: var(--primary-color); border-bottom: 2px solid #eee; padding-bottom: 10px; }
+        
+        /* 表格样式 */
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; background: white; }
+        th, td { border: 1px solid #eee; padding: 12px; text-align: left; }
+        th { background-color: #fcfcfc; font-weight: 600; }
+        
+        /* 输入控件 */
+        select, input { width: 100%; padding: 10px; margin: 8px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 16px; }
+        button { cursor: pointer; padding: 10px 20px; border: none; border-radius: 6px; font-weight: bold; transition: 0.3s; margin-top: 10px; }
+        
+        .btn-primary { background-color: var(--primary-color); color: white; }
+        .btn-add { background-color: #34c759; color: white; margin-bottom: 15px; }
+        .btn-danger { background-color: #ff3b30; color: white; font-size: 12px; padding: 5px 10px; }
+        
+        .camera-label { display: inline-block; background-color: #5856d6; color: white; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-size: 14px; }
         .camera-input { display: none; }
+        
+        .footer-tool { margin-top: 40px; font-size: 12px; color: #999; text-align: center; cursor: pointer; }
     </style>
 </head>
 <body>
 
-    <div id="loginView" class="login-box">
-        <h2>系统登录</h2>
+    <div id="configView" class="card hidden">
+        <h2>⚙️ 系统初始化配置</h2>
+        <p>检测到您是首次访问，请配置后端 API Token (如 Supabase Key)。此信息将加密保存在本地浏览器中。</p>
+        <input type="password" id="tokenInput" placeholder="请输入您的 API Token">
+        <button class="btn-primary" onclick="saveToken()">保存配置并进入</button>
+    </div>
+
+    <div id="loginView" class="card hidden">
+        <h2>🏠 家庭作业系统登录</h2>
+        <label>选择角色：</label>
         <select id="userRole">
             <option value="admin">管理员 (家长)</option>
             <option value="dudu">嘟嘟</option>
             <option value="bobo">啵啵</option>
         </select>
-        <br>
-        <input type="password" id="password" placeholder="请输入密码">
-        <br>
-        <button onclick="login()">登录</button>
-        <p id="loginError" style="color: red; display: none;">密码错误！</p>
+        <input type="password" id="password" placeholder="请输入访问密码">
+        <button class="btn-primary" style="width: 100%;" onclick="login()">登录</button>
+        <p id="loginError" style="color: #ff3b30; font-size: 14px; display: none; text-align: center;">⚠️ 密码不正确，请重试。</p>
     </div>
 
-    <div id="appView" class="app-box hidden">
-        <h2 id="dateTitle"></h2>
-        <p>当前用户: <span id="currentUser"></span> <button onclick="logout()">退出</button></p>
+    <div id="appView" class="card hidden">
+        <div style="display: flex; justify-content: space-between; align-items: baseline;">
+            <h2 id="dateTitle">2026年3月13日 星期五</h2>
+            <button onclick="logout()" style="font-size: 12px; background: #eee;">登出</button>
+        </div>
+        <p>当前用户：<strong id="currentUserDisplay">--</strong></p>
+
+        <button id="addTaskBtn" class="btn-add hidden" onclick="addTask()">+ 增加新科目</button>
         
         <table id="homeworkTable">
             <thead>
                 <tr>
-                    <th>学科</th>
-                    <th>作业内容</th>
-                    <th>操作</th>
+                    <th width="30%">学科</th>
+                    <th width="40%">作业内容</th>
+                    <th width="30%">上传/状态</th>
                 </tr>
             </thead>
             <tbody id="homeworkList">
                 </tbody>
         </table>
-
-        <button id="addTaskBtn" class="hidden" onclick="addTask()">+ 增加一项作业</button>
     </div>
 
     <datalist id="subjects">
-        <option value="语文"></option>
-        <option value="数学"></option>
-        <option value="英语"></option>
-        <option value="学而思"></option>
-        <option value="乐读"></option>
-        <option value="画画"></option>
+        <option value="语文">语文</option>
+        <option value="数学">数学</option>
+        <option value="英语">英语</option>
+        <option value="学而思">学而思</option>
+        <option value="乐读">乐读</option>
+        <option value="画画">画画</option>
     </datalist>
 
+    <div class="footer-tool" onclick="resetConfig()">重置系统配置 (清除本地 Token)</div>
+
     <script>
-        // 用户配置
+        // --- 核心配置 ---
         const users = {
-            'admin': { pass: '840802', name: '管理员' },
+            'admin': { pass: '840802', name: '家长' },
             'dudu': { pass: 'dudu', name: '嘟嘟' },
             'bobo': { pass: 'bobo', name: '啵啵' }
         };
 
         let currentRole = '';
 
-        // 登录逻辑
+        // --- 初始化检查 ---
+        window.onload = function() {
+            const savedToken = localStorage.getItem('HOMEWORK_TOKEN');
+            if (!savedToken) {
+                showView('configView');
+            } else {
+                showView('loginView');
+            }
+            updateDateHeader();
+        };
+
+        // --- 视图切换函数 ---
+        function showView(viewId) {
+            document.getElementById('configView').classList.add('hidden');
+            document.getElementById('loginView').classList.add('hidden');
+            document.getElementById('appView').classList.add('hidden');
+            document.getElementById(viewId).classList.remove('hidden');
+        }
+
+        // --- 配置逻辑 ---
+        function saveToken() {
+            const token = document.getElementById('tokenInput').value;
+            if (token.trim()) {
+                localStorage.setItem('HOMEWORK_TOKEN', token);
+                showView('loginView');
+            }
+        }
+
+        function resetConfig() {
+            if(confirm('确定要重置配置吗？这将清除保存的 Token。')) {
+                localStorage.removeItem('HOMEWORK_TOKEN');
+                location.reload();
+            }
+        }
+
+        // --- 登录逻辑 ---
         function login() {
             const role = document.getElementById('userRole').value;
             const pwd = document.getElementById('password').value;
+            const errorTips = document.getElementById('loginError');
 
             if (users[role] && users[role].pass === pwd) {
                 currentRole = role;
-                document.getElementById('loginView').classList.add('hidden');
-                document.getElementById('appView').classList.remove('hidden');
-                document.getElementById('loginError').style.display = 'none';
+                errorTips.style.display = 'none';
+                document.getElementById('currentUserDisplay').innerText = users[role].name;
                 
-                initApp();
+                showView('appView');
+                initAppContent();
             } else {
-                document.getElementById('loginError').style.display = 'block';
+                errorTips.style.display = 'block';
             }
         }
 
-        // 退出逻辑
         function logout() {
             currentRole = '';
             document.getElementById('password').value = '';
-            document.getElementById('loginView').classList.remove('hidden');
-            document.getElementById('appView').classList.add('hidden');
+            showView('loginView');
         }
 
-        // 初始化主界面
-        function initApp() {
-            document.getElementById('currentUser').innerText = users[currentRole].name;
-            
-            // 设置日期标题
+        // --- 作业逻辑 ---
+        function updateDateHeader() {
             const today = new Date();
-            const days = ['日', '一', '二', '三', '四', '五', '六'];
-            const dateStr = `${today.getFullYear()}年${today.getMonth() + 1}月${today.getDate()}日 星期${days[today.getDay()]}`;
+            const weeks = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+            const dateStr = `${today.getFullYear()}年${today.getMonth() + 1}月${today.getDate()}日 ${weeks[today.getDay()]}`;
             document.getElementById('dateTitle').innerText = dateStr;
+        }
 
-            // 权限控制：仅管理员可添加作业
+        function initAppContent() {
+            const list = document.getElementById('homeworkList');
+            list.innerHTML = ''; // 清空预览
+
             if (currentRole === 'admin') {
                 document.getElementById('addTaskBtn').classList.remove('hidden');
-                // 默认初始化一行空作业
-                document.getElementById('homeworkList').innerHTML = ''; 
-                addTask();
+                addTask(); // 管理员默认给一行
             } else {
                 document.getElementById('addTaskBtn').classList.add('hidden');
-                // 模拟加载已布置的作业
-                renderUserView(); 
+                // 模拟加载逻辑
+                mockLoadData();
             }
         }
 
-        // 增加一行作业
         function addTask() {
             const tbody = document.getElementById('homeworkList');
             const tr = document.createElement('tr');
             
-            // 学科列 (使用 datalist 实现既能选又能填)
-            let subjectCol = `<td><input list="subjects" placeholder="选择或输入" class="subject-input"></td>`;
-            // 内容列
-            let contentCol = `<td><input type="text" placeholder="输入作业内容"></td>`;
-            // 按钮列 (管理员可以删除行，也可以测试上传)
-            let actionCol = `
+            tr.innerHTML = `
+                <td><input list="subjects" placeholder="请选择或手动输入" class="subject-input"></td>
+                <td><input type="text" placeholder="输入具体要求"></td>
                 <td>
-                    <label class="camera-btn">
-                        📷 拍照上传
-                        <input type="file" accept="image/*" capture="environment" class="camera-input" onchange="handleUpload(this)">
-                    </label>
-                    <button onclick="this.parentElement.parentElement.remove()" style="background: red; color: white; border: none; padding: 5px;">删除</button>
-                </td>`;
-
-            tr.innerHTML = subjectCol + contentCol + actionCol;
+                    <button class="btn-danger" onclick="this.parentElement.parentElement.remove()">删除</button>
+                </td>
+            `;
             tbody.appendChild(tr);
         }
 
-        // 孩子视图（仅查看和上传）
-        function renderUserView() {
+        function mockLoadData() {
             const tbody = document.getElementById('homeworkList');
-            // 这里应该是从云端拉取数据，这里用硬编码演示
-            tbody.innerHTML = `
-                <tr>
-                    <td>数学</td>
-                    <td>完成口算练习册第10页</td>
+            // 以后你可以从 Supabase 读取这里的数组
+            const tasks = [
+                { sub: '数学', content: '口算练习第5页' },
+                { sub: '英语', content: '背诵课文第一段' }
+            ];
+
+            tasks.forEach(task => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td style="font-weight:bold">${task.sub}</td>
+                    <td>${task.content}</td>
                     <td>
-                        <label class="camera-btn">
-                            📷 拍照上传
-                            <input type="file" accept="image/*" capture="environment" class="camera-input" onchange="handleUpload(this)">
+                        <label class="camera-label">
+                            📸 拍作业上传
+                            <input type="file" accept="image/*" capture="environment" class="camera-input" onchange="handleFile(this)">
                         </label>
                     </td>
-                </tr>
-            `;
+                `;
+                tbody.appendChild(tr);
+            });
         }
 
-        // 处理照片上传后的逻辑
-        function handleUpload(inputElement) {
-            const file = inputElement.files[0];
-            if (file) {
-                alert(`选择了文件: ${file.name}\n接下来可以将该文件发送到云端。`);
-                // 这里可以添加将图片发送到后端服务器的代码
+        function handleFile(input) {
+            if (input.files && input.files[0]) {
+                const file = input.files[0];
+                alert(`读取照片成功: ${file.name}\n(这里需要接入 Supabase SDK 即可实现真正的云上传)`);
             }
         }
-      // 初始化时检查是否已配置 Token
-function checkSystemConfig() {
-    const savedToken = localStorage.getItem('SYSTEM_API_TOKEN');
-    
-    if (!savedToken) {
-        // 如果没有 Token，显示配置界面，隐藏登录界面
-        document.getElementById('configView').classList.remove('hidden');
-        document.getElementById('loginView').classList.add('hidden');
-    } else {
-        // 如果已有 Token，直接显示登录界面
-        document.getElementById('configView').classList.add('hidden');
-        document.getElementById('loginView').classList.remove('hidden');
-        // 这里可以将 token 赋值给全局变量供后续 API 调用
-        window.apiToken = savedToken; 
-    }
-}
-
-// 保存 Token 的动作
-function saveToken() {
-    const inputToken = document.getElementById('tokenInput').value;
-    if (inputToken.trim() === '') {
-        alert('Token 不能为空！');
-        return;
-    }
-    
-    // 存入浏览器的 localStorage
-    localStorage.setItem('SYSTEM_API_TOKEN', inputToken);
-    alert('配置已保存！只有清理浏览器缓存才会失效。');
-    
-    // 重新运行检查逻辑，跳转到登录页
-    checkSystemConfig();
-}
-
-// 页面加载时执行
-window.onload = checkSystemConfig;
-      <div id="configView" class="login-box hidden">
-    <h2>⚙️ 系统初始化</h2>
-    <p style="font-size: 0.9em; color: #666;">首次使用，请配置后端 API Token。该数据仅保存在您当前设备的浏览器中。</p>
-    <input type="password" id="tokenInput" placeholder="请输入 Token / API Key">
-    <button onclick="saveToken()">保存并进入系统</button>
-</div>
     </script>
 </body>
 </html>
