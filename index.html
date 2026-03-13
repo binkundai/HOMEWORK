@@ -3,44 +3,54 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>作业系统</title>
+    <title>儿童作业布置系统</title>
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <style>
-        body { font-family: -apple-system, sans-serif; background: #f5f7fa; padding: 15px; margin: 0; }
+        :root { --primary-color: #4a90e2; --bg-color: #f5f7fa; }
+        body { font-family: -apple-system, sans-serif; background: var(--bg-color); padding: 15px; margin: 0; }
         .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 20px; }
         .hidden { display: none !important; }
         input, select, button { width: 100%; padding: 12px; margin: 8px 0; border-radius: 8px; border: 1px solid #ddd; font-size: 16px; box-sizing: border-box; }
-        button { background: #4a90e2; color: white; border: none; font-weight: bold; cursor: pointer; }
+        button { background: var(--primary-color); color: white; border: none; font-weight: bold; cursor: pointer; }
+        button:disabled { background: #ccc; }
         table { width: 100%; border-collapse: collapse; margin-top: 15px; table-layout: fixed; }
-        td, th { border: 1px solid #eee; padding: 8px; font-size: 14px; text-align: left; }
+        td, th { border: 1px solid #eee; padding: 10px 8px; font-size: 14px; text-align: left; }
+        th { background: #fafafa; }
         .btn-add { background: #34c759; width: auto; margin-bottom: 10px; padding: 8px 15px; font-size: 14px; }
         .btn-save { background: #ff9500; margin-top: 20px; }
         .btn-del { background: #ff3b30; width: auto; padding: 4px 8px; font-size: 12px; }
+        .img-preview { width: 35px; height: 35px; object-fit: cover; border-radius: 4px; vertical-align: middle; border: 1px solid #ddd; cursor: pointer; }
     </style>
 </head>
 <body>
 
     <div id="loginView" class="card">
-        <h2 style="text-align:center; color:#4a90e2; font-size: 1.2rem;">🏠 家庭作业系统</h2>
+        <h2 style="text-align:center; color:var(--primary-color);">🏠 家庭作业系统</h2>
         <select id="userRole">
             <option value="admin">管理员 (家长)</option>
             <option value="dudu">嘟嘟</option>
             <option value="bobo">啵啵</option>
         </select>
-        <input type="password" id="password" placeholder="请输入密码">
+        <input type="password" id="password" placeholder="请输入访问密码">
         <button id="loginBtn" onclick="doLogin()">登 录</button>
     </div>
 
     <div id="appView" class="card hidden">
-        <h3 id="dateTitle" style="font-size:1.1rem; color:#4a90e2; margin-top:0;"></h3>
-        <p style="font-size:12px; color:#666">当前用户: <span id="userDisplay" style="font-weight:bold"></span> | <a href="javascript:location.reload()">退出</a></p>
+        <h3 id="dateTitle" style="color:var(--primary-color); margin-top:0;"></h3>
+        <p style="font-size:12px; color:#666">当前用户: <span id="userDisplay" style="font-weight:bold"></span> | <a href="javascript:location.reload()">退出登录</a></p>
         
         <div id="adminArea" class="hidden">
             <button class="btn-add" onclick="addRow()">+ 新增科目</button>
         </div>
 
         <table>
-            <thead><tr><th width="35%">科目</th><th width="40%">内容</th><th width="25%">操作</th></tr></thead>
+            <thead>
+                <tr>
+                    <th width="35%">科目</th>
+                    <th width="40%">内容</th>
+                    <th width="25%">操作</th>
+                </tr>
+            </thead>
             <tbody id="listBody"></tbody>
         </table>
 
@@ -48,9 +58,9 @@
     </div>
 
     <script>
-        // --- 1. 配置与初始化 (确保 supabase 只定义一次) ---
+        // --- 1. 配置信息 (请确保此处 Key 只出现一次) ---
         const SB_URL = "https://mupjybbafixsmdlsqxxq.supabase.co";
-        const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im11cGp5YmJhZml4c21kbHNxeHhxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwMzUwMTcsImV4cCI6MjA4ODYxMTAxN30.bfNvl_e30pv8EVNeMcJj7O60p96ltp96J2abm2YT7hA";
+        const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im11cGp5YmJhZml4c21kbHNxeHhxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwMzUwMTcsImV4cCI6MjA4ODYxMTAxN30.bfNvl_e30pv8EVNeMcJj7O60p96ltp96J2abm2YT7hA"; 
         
         const client = window.supabase.createClient(SB_URL, SB_KEY);
 
@@ -60,7 +70,7 @@
 
         const getTodayStr = () => new Date().toISOString().split('T')[0];
 
-        // --- 2. 登录函数 ---
+        // --- 2. 登录逻辑 ---
         async function doLogin() {
             const role = document.getElementById('userRole').value;
             const pwd = document.getElementById('password').value;
@@ -70,19 +80,18 @@
                 document.getElementById('userDisplay').innerText = role === 'admin' ? '家长' : role;
                 document.getElementById('loginView').classList.add('hidden');
                 document.getElementById('appView').classList.remove('hidden');
-                
                 await loadDashboard();
             } else {
-                alert("密码不对哦");
+                alert("密码错误");
             }
         }
 
-        // --- 3. 加载数据 ---
+        // --- 3. 加载今日作业 ---
         async function loadDashboard() {
             const dateStr = getTodayStr();
             document.getElementById('dateTitle').innerText = dateStr + " 作业清单";
             const list = document.getElementById('listBody');
-            list.innerHTML = '<tr><td colspan="3">云端同步中...</td></tr>';
+            list.innerHTML = '<tr><td colspan="3">正在读取数据...</td></tr>';
 
             try {
                 const { data, error } = await client.from('HOMEWORK_TASKS').select('*').eq('date_str', dateStr);
@@ -92,34 +101,40 @@
                 if (currentRole === 'admin') {
                     document.getElementById('adminArea').classList.remove('hidden');
                     document.getElementById('saveBtn').classList.remove('hidden');
-                    if (data && data.length > 0) {
-                        data.forEach(d => addRow(d));
-                    } else {
-                        addRow();
-                    }
+                    if (data && data.length > 0) data.forEach(d => addRow(d));
+                    else addRow();
                 } else {
                     if (!data || data.length === 0) {
                         list.innerHTML = '<tr><td colspan="3" style="text-align:center">今日暂无作业 ☕</td></tr>';
                     } else {
                         data.forEach(d => {
                             const tr = document.createElement('tr');
-                            tr.innerHTML = `<td><b>${d.subject}</b></td><td>${d.content}</td><td><button style="padding:4px; font-size:12px;" onclick="doUpload(${d.id})">📸拍照</button></td>`;
+                            const imgPreview = d.image_url ? `<img src="${d.image_url}" class="img-preview" onclick="window.open('${d.image_url}')">` : '';
+                            
+                            tr.innerHTML = `
+                                <td><b>${d.subject}</b></td>
+                                <td>${d.content}</td>
+                                <td>
+                                    ${imgPreview}
+                                    <button style="width:auto; padding:5px 8px; font-size:12px; background:#5856d6;" onclick="triggerCamera(${d.id})">📸${d.image_url?'重拍':'拍照'}</button>
+                                    <input type="file" id="cam-${d.id}" accept="image/*" capture="environment" style="display:none" onchange="handleFileSelect(this, ${d.id})">
+                                </td>`;
                             list.appendChild(tr);
                         });
                     }
                 }
             } catch (err) {
-                alert("查询失败: " + err.message);
+                alert("同步失败: " + err.message);
             }
         }
 
-        // --- 4. 管理员操作 ---
+        // --- 4. 管理员功能：增加/发布作业 ---
         function addRow(data = null) {
             const tr = document.createElement('tr');
             let opts = subjects.map(s => `<option value="${s}" ${(data && data.subject === s) ? 'selected' : ''}>${s}</option>`).join('');
             tr.innerHTML = `
                 <td><select class="s-in">${opts}</select></td>
-                <td><input type="text" class="c-in" value="${data ? data.content : ''}" placeholder="必填"></td>
+                <td><input type="text" class="c-in" value="${data ? data.content : ''}" placeholder="请输入内容"></td>
                 <td><button class="btn-del" onclick="this.parentElement.parentElement.remove()">删</button></td>
             `;
             document.getElementById('listBody').appendChild(tr);
@@ -138,21 +153,61 @@
                 }
             });
 
-            if (tasks.length === 0) return alert("请输入作业内容");
+            if (tasks.length === 0) return alert("请先填写作业内容");
 
             try {
+                // 先清理旧的再插入新的
                 await client.from('HOMEWORK_TASKS').delete().eq('date_str', dateStr);
                 const { error } = await client.from('HOMEWORK_TASKS').insert(tasks);
                 if (error) throw error;
-                alert("发布成功！");
+                alert("今日作业已发布成功！");
             } catch (err) {
                 alert("保存失败: " + err.message);
             }
         }
 
-        // --- 5. 拍照功能提示 ---
-        function doUpload(id) {
-            alert("即将调用摄像头，对应ID: " + id + "\n(真正上传逻辑已在代码中，需配置 Storage Bucket 权限)");
+        // --- 5. 拍照上传逻辑 ---
+        function triggerCamera(id) {
+            document.getElementById(`cam-${id}`).click();
+        }
+
+        async function handleFileSelect(input, taskId) {
+            if (!input.files || !input.files[0]) return;
+            
+            const file = input.files[0];
+            const fileExt = file.name.split('.').pop();
+            const fileName = `hw_${taskId}_${Date.now()}.${fileExt}`;
+            
+            const btn = input.previousElementSibling;
+            btn.innerText = "上传中...";
+            btn.disabled = true;
+
+            try {
+                // 1. 上传图片文件到 HOMEWORK_PHOTOS 桶
+                const { error: upError } = await client.storage
+                    .from('HOMEWORK_PHOTOS')
+                    .upload(fileName, file);
+
+                if (upError) throw upError;
+
+                // 2. 获取该文件的链接
+                const { data: urlData } = client.storage.from('HOMEWORK_PHOTOS').getPublicUrl(fileName);
+                const publicUrl = urlData.publicUrl;
+
+                // 3. 将链接写回数据库
+                const { error: dbError } = await client.from('HOMEWORK_TASKS')
+                    .update({ image_url: publicUrl })
+                    .eq('id', taskId);
+
+                if (dbError) throw dbError;
+
+                alert("照片上传成功！");
+                loadDashboard(); // 刷新显示图片
+            } catch (err) {
+                alert("照片保存失败: " + err.message);
+                btn.innerText = "重试";
+                btn.disabled = false;
+            }
         }
     </script>
 </body>
