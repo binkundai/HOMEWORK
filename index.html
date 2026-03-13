@@ -6,84 +6,76 @@
     <title>儿童作业布置系统</title>
     <style>
         :root { --primary-color: #4a90e2; --secondary-color: #f5f7fa; }
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 20px; max-width: 800px; margin: auto; background-color: var(--secondary-color); color: #333; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 15px; max-width: 800px; margin: auto; background-color: var(--secondary-color); color: #333; }
         .hidden { display: none !important; }
-        .card { background: white; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); padding: 25px; margin-bottom: 20px; }
-        h2 { margin-top: 0; color: var(--primary-color); border-bottom: 2px solid #eee; padding-bottom: 10px; }
+        .card { background: white; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); padding: 20px; margin-bottom: 20px; }
+        
+        /* 1) 修正标题字体：改小并防止折行 */
+        h2 { margin-top: 0; color: var(--primary-color); border-bottom: 2px solid #eee; padding-bottom: 10px; font-size: 1.15rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         
         /* 表格样式 */
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; background: white; }
-        th, td { border: 1px solid #eee; padding: 12px; text-align: left; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; background: white; table-layout: fixed; }
+        th, td { border: 1px solid #eee; padding: 10px 8px; text-align: left; font-size: 14px; word-break: break-all; }
         th { background-color: #fcfcfc; font-weight: 600; }
         
         /* 输入控件 */
-        select, input { width: 100%; padding: 10px; margin: 8px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 16px; }
-        button { cursor: pointer; padding: 10px 20px; border: none; border-radius: 6px; font-weight: bold; transition: 0.3s; margin-top: 10px; }
+        select, input { width: 100%; padding: 8px; margin: 4px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 14px; }
+        button { cursor: pointer; padding: 8px 15px; border: none; border-radius: 6px; font-weight: bold; transition: 0.3s; }
         
-        .btn-primary { background-color: var(--primary-color); color: white; }
-        .btn-add { background-color: #34c759; color: white; margin-bottom: 15px; }
-        .btn-danger { background-color: #ff3b30; color: white; font-size: 12px; padding: 5px 10px; }
+        .btn-primary { background-color: var(--primary-color); color: white; width: 100%; margin-top: 10px; }
+        .btn-add { background-color: #34c759; color: white; margin-bottom: 10px; width: auto; font-size: 14px; }
+        .btn-danger { background-color: #ff3b30; color: white; font-size: 12px; padding: 4px 8px; }
         
-        .camera-label { display: inline-block; background-color: #5856d6; color: white; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-size: 14px; }
+        .camera-label { display: inline-block; background-color: #5856d6; color: white; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 12px; text-align: center; }
         .camera-input { display: none; }
         
-        .footer-tool { margin-top: 40px; font-size: 12px; color: #999; text-align: center; cursor: pointer; }
+        .footer-tool { margin-top: 30px; font-size: 11px; color: #bbb; text-align: center; cursor: pointer; }
+        .user-info { font-size: 14px; color: #666; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
     </style>
 </head>
 <body>
 
     <div id="configView" class="card hidden">
         <h2>⚙️ 系统初始化配置</h2>
-        <p>检测到您是首次访问，请配置后端 API Token (如 Supabase Key)。此信息将加密保存在本地浏览器中。</p>
         <input type="password" id="tokenInput" placeholder="请输入您的 API Token">
-        <button class="btn-primary" onclick="saveToken()">保存配置并进入</button>
+        <button class="btn-primary" onclick="saveToken()">保存并进入</button>
     </div>
 
     <div id="loginView" class="card hidden">
-        <h2>🏠 家庭作业系统登录</h2>
-        <label>选择角色：</label>
+        <h2 style="text-align: center;">🏠 家庭作业系统登录</h2>
         <select id="userRole">
             <option value="admin">管理员 (家长)</option>
             <option value="dudu">嘟嘟</option>
             <option value="bobo">啵啵</option>
         </select>
         <input type="password" id="password" placeholder="请输入访问密码">
-        <button class="btn-primary" style="width: 100%;" onclick="login()">登录</button>
-        <p id="loginError" style="color: #ff3b30; font-size: 14px; display: none; text-align: center;">⚠️ 密码不正确，请重试。</p>
+        <button class="btn-primary" onclick="login()">登录</button>
+        <p id="loginError" style="color: #ff3b30; font-size: 12px; display: none; text-align: center; margin-top: 10px;">⚠️ 密码不正确</p>
     </div>
 
     <div id="appView" class="card hidden">
-        <div style="display: flex; justify-content: space-between; align-items: baseline;">
-            <h2 id="dateTitle">2026年3月13日 星期五</h2>
-            <button onclick="logout()" style="font-size: 12px; background: #eee;">登出</button>
+        <h2 id="dateTitle">加载中...</h2>
+        
+        <div class="user-info">
+            <span>当前用户：<strong id="currentUserDisplay">--</strong></span>
+            <span onclick="logout()" style="text-decoration: underline; cursor: pointer; color: #999; font-size: 12px;">退出登录</span>
         </div>
-        <p>当前用户：<strong id="currentUserDisplay">--</strong></p>
 
         <button id="addTaskBtn" class="btn-add hidden" onclick="addTask()">+ 增加新科目</button>
         
         <table id="homeworkTable">
             <thead>
                 <tr>
-                    <th width="30%">学科</th>
+                    <th width="35%">学科</th>
                     <th width="40%">作业内容</th>
-                    <th width="30%">上传/状态</th>
+                    <th width="25%">操作</th>
                 </tr>
             </thead>
-            <tbody id="homeworkList">
-                </tbody>
+            <tbody id="homeworkList"></tbody>
         </table>
     </div>
 
-    <datalist id="subjects">
-        <option value="语文">语文</option>
-        <option value="数学">数学</option>
-        <option value="英语">英语</option>
-        <option value="学而思">学而思</option>
-        <option value="乐读">乐读</option>
-        <option value="画画">画画</option>
-    </datalist>
-
-    <div class="footer-tool" onclick="resetConfig()">重置系统配置 (清除本地 Token)</div>
+    <div class="footer-tool" onclick="resetConfig()">重置系统配置</div>
 
     <script>
         // --- 核心配置 ---
@@ -93,131 +85,102 @@
             'bobo': { pass: 'bobo', name: '啵啵' }
         };
 
+        // 2) 定义固定下拉选项
+        const subjectOptions = [
+            "学而思数学", "乐读数学", "集训队", "乐读语文", "乐读英语", "校内作业", "课外作业"
+        ];
+
         let currentRole = '';
 
-        // --- 初始化检查 ---
         window.onload = function() {
             const savedToken = localStorage.getItem('HOMEWORK_TOKEN');
-            if (!savedToken) {
-                showView('configView');
-            } else {
-                showView('loginView');
-            }
+            if (!savedToken) { showView('configView'); } 
+            else { showView('loginView'); }
             updateDateHeader();
         };
 
-        // --- 视图切换函数 ---
         function showView(viewId) {
-            document.getElementById('configView').classList.add('hidden');
-            document.getElementById('loginView').classList.add('hidden');
-            document.getElementById('appView').classList.add('hidden');
+            ['configView', 'loginView', 'appView'].forEach(id => document.getElementById(id).classList.add('hidden'));
             document.getElementById(viewId).classList.remove('hidden');
         }
 
-        // --- 配置逻辑 ---
         function saveToken() {
             const token = document.getElementById('tokenInput').value;
-            if (token.trim()) {
-                localStorage.setItem('HOMEWORK_TOKEN', token);
-                showView('loginView');
-            }
+            if (token.trim()) { localStorage.setItem('HOMEWORK_TOKEN', token); showView('loginView'); }
         }
 
         function resetConfig() {
-            if(confirm('确定要重置配置吗？这将清除保存的 Token。')) {
-                localStorage.removeItem('HOMEWORK_TOKEN');
-                location.reload();
-            }
+            if(confirm('确定要重置配置吗？')) { localStorage.removeItem('HOMEWORK_TOKEN'); location.reload(); }
         }
 
-        // --- 登录逻辑 ---
         function login() {
             const role = document.getElementById('userRole').value;
             const pwd = document.getElementById('password').value;
-            const errorTips = document.getElementById('loginError');
-
             if (users[role] && users[role].pass === pwd) {
                 currentRole = role;
-                errorTips.style.display = 'none';
                 document.getElementById('currentUserDisplay').innerText = users[role].name;
-                
                 showView('appView');
                 initAppContent();
             } else {
-                errorTips.style.display = 'block';
+                document.getElementById('loginError').style.display = 'block';
             }
         }
 
         function logout() {
-            currentRole = '';
             document.getElementById('password').value = '';
             showView('loginView');
         }
 
-        // --- 作业逻辑 ---
         function updateDateHeader() {
             const today = new Date();
             const weeks = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
-            const dateStr = `${today.getFullYear()}年${today.getMonth() + 1}月${today.getDate()}日 ${weeks[today.getDay()]}`;
-            document.getElementById('dateTitle').innerText = dateStr;
+            document.getElementById('dateTitle').innerText = `${today.getFullYear()}年${today.getMonth() + 1}月${today.getDate()}日 ${weeks[today.getDay()]}`;
+        }
+
+        // 生成学科下拉菜单的 HTML 字符串
+        function getSubjectSelectHtml() {
+            let html = '<select class="subject-select">';
+            subjectOptions.forEach(opt => {
+                html += `<option value="${opt}">${opt}</option>`;
+            });
+            html += '</select>';
+            return html;
         }
 
         function initAppContent() {
             const list = document.getElementById('homeworkList');
-            list.innerHTML = ''; // 清空预览
+            list.innerHTML = ''; 
 
             if (currentRole === 'admin') {
                 document.getElementById('addTaskBtn').classList.remove('hidden');
-                addTask(); // 管理员默认给一行
+                addTask(); 
             } else {
                 document.getElementById('addTaskBtn').classList.add('hidden');
-                // 模拟加载逻辑
-                mockLoadData();
+                // 模拟数据展示
+                const mockData = [{sub: '校内作业', content: '练习册P1-3'}];
+                mockData.forEach(item => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `<td>${item.sub}</td><td>${item.content}</td>
+                        <td><label class="camera-label">📷 拍照<input type="file" accept="image/*" capture="environment" class="camera-input" onchange="handleFile(this)"></label></td>`;
+                    list.appendChild(tr);
+                });
             }
         }
 
         function addTask() {
             const tbody = document.getElementById('homeworkList');
             const tr = document.createElement('tr');
-            
             tr.innerHTML = `
-                <td><input list="subjects" placeholder="请选择或手动输入" class="subject-input"></td>
-                <td><input type="text" placeholder="输入具体要求"></td>
-                <td>
-                    <button class="btn-danger" onclick="this.parentElement.parentElement.remove()">删除</button>
-                </td>
+                <td>${getSubjectSelectHtml()}</td>
+                <td><input type="text" placeholder="填写要求"></td>
+                <td><button class="btn-danger" onclick="this.parentElement.parentElement.remove()">删除</button></td>
             `;
             tbody.appendChild(tr);
         }
 
-        function mockLoadData() {
-            const tbody = document.getElementById('homeworkList');
-            // 以后你可以从 Supabase 读取这里的数组
-            const tasks = [
-                { sub: '数学', content: '口算练习第5页' },
-                { sub: '英语', content: '背诵课文第一段' }
-            ];
-
-            tasks.forEach(task => {
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td style="font-weight:bold">${task.sub}</td>
-                    <td>${task.content}</td>
-                    <td>
-                        <label class="camera-label">
-                            📸 拍作业上传
-                            <input type="file" accept="image/*" capture="environment" class="camera-input" onchange="handleFile(this)">
-                        </label>
-                    </td>
-                `;
-                tbody.appendChild(tr);
-            });
-        }
-
         function handleFile(input) {
             if (input.files && input.files[0]) {
-                const file = input.files[0];
-                alert(`读取照片成功: ${file.name}\n(这里需要接入 Supabase SDK 即可实现真正的云上传)`);
+                alert(`读取成功: ${input.files[0].name}\n准备上传云端...`);
             }
         }
     </script>
