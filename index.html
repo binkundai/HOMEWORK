@@ -55,22 +55,25 @@
             <tbody id="listBody"></tbody>
         </table>
 
-        <button id="saveBtn" class="btn-save hidden" onclick="doSave()">🚀 发布今日作业</button>
+        <button id="saveBtn" class="btn-save hidden" onclick="doSave()">🚀 发布并推送微信</button>
         <span id="readonlyMsg" class="history-tag hidden">⚠️ 历史记录仅供查阅</span>
     </div>
 
     <script>
+        // --- 1. 配置信息 ---
         const SB_URL = "https://mupjybbafixsmdlsqxxq.supabase.co";
         const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im11cGp5YmJhZml4c21kbHNxeHhxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwMzUwMTcsImV4cCI6MjA4ODYxMTAxN30.bfNvl_e30pv8EVNeMcJj7O60p96ltp96J2abm2YT7hA"; 
-        const client = window.supabase.createClient(SB_URL, SB_KEY);
+        
+        // 【重要】在这里填入你从 Server酱 复制的 SendKey
+        const SERVER_CHAN_KEY = "SCT135651TZHh6tUlVaovebckiayAAfcuw"; 
 
+        const client = window.supabase.createClient(SB_URL, SB_KEY);
         const users = {'admin':'840802', 'dudu':'dudu', 'bobo':'bobo'};
         const subjects = ["学而思数学", "乐读数学", "集训队", "乐读语文", "乐读英语", "校内作业", "课外作业"];
         
         let currentRole = '';
-        let viewDate = new Date(); // 当前查看的日期对象
+        let viewDate = new Date();
 
-        // 获取 GMT+8 格式的日期字符串
         function getGmt8DateStr(date) {
             return new Intl.DateTimeFormat('zh-CN', {
                 timeZone: 'Asia/Shanghai',
@@ -94,13 +97,6 @@
 
         function changeDate(days) {
             viewDate.setDate(viewDate.getDate() + days);
-            // 限制只能看最近7天
-            const diff = Math.abs((viewDate - new Date()) / (1000 * 60 * 60 * 24));
-            if (diff > 7) {
-                alert("仅支持查看最近7天的作业历史");
-                viewDate.setDate(viewDate.getDate() - days);
-                return;
-            }
             loadDashboard();
         }
 
@@ -111,7 +107,6 @@
             const list = document.getElementById('listBody');
             list.innerHTML = '<tr><td colspan="3">同步中...</td></tr>';
 
-            // 权限显隐控制
             const isAdmin = (currentRole === 'admin');
             document.getElementById('adminArea').classList.toggle('hidden', !isAdmin || !isToday);
             document.getElementById('saveBtn').classList.toggle('hidden', !isAdmin || !isToday);
@@ -146,30 +141,53 @@
             document.getElementById('listBody').appendChild(tr);
         }
 
+        // --- 核心：发布并发送微信推送 ---
         async function doSave() {
             const dateStr = getGmt8DateStr(viewDate);
             const tasks = [];
-            document.querySelectorAll('#listBody tr').forEach(r => {
+            let pushContent = `📅 日期：${dateStr}\n------------------\n`;
+
+            document.querySelectorAll('#listBody tr').forEach((r, index) => {
                 const s = r.querySelector('.s-in')?.value;
                 const c = r.querySelector('.c-in')?.value;
-                if (c && c.trim()) tasks.push({ date_str: dateStr, subject: s, content: c.trim() });
+                if (c && c.trim()) {
+                    tasks.push({ date_str: dateStr, subject: s, content: c.trim() });
+                    pushContent += `${index + 1}. 【${s}】${c.trim()}\n`;
+                }
             });
+
             if (tasks.length === 0) return alert("请填写内容");
 
+            const saveBtn = document.getElementById('saveBtn');
+            saveBtn.disabled = true;
+            saveBtn.innerText = "正在发布并推送...";
+
             try {
-                // 1. 清理 7 天前的历史（自动维护空间）
+                // 1. 清理 7 天前的历史
                 const cutoff = new Date();
                 cutoff.setDate(cutoff.getDate() - 7);
-                const cutoffStr = getGmt8DateStr(cutoff);
-                await client.from('HOMEWORK_TASKS').delete().lt('date_str', cutoffStr);
+                await client.from('HOMEWORK_TASKS').delete().lt('date_str', getGmt8DateStr(cutoff));
 
                 // 2. 保存今日作业
                 await client.from('HOMEWORK_TASKS').delete().eq('date_str', dateStr);
                 const { error } = await client.from('HOMEWORK_TASKS').insert(tasks);
                 if (error) throw error;
-                alert("发布成功！已自动清理7天前旧数据。");
+
+                // 3. 微信推送
+                if (SERVER_CHAN_KEY && SERVER_CHAN_KEY.startsWith("SCT")) {
+                    const title = encodeURIComponent(`叮！今日作业已更新(${dateStr})`);
+                    const desp = encodeURIComponent(pushContent + `\n------------------\n请进入系统查看详情或拍照。`);
+                    await fetch(`https://sctapi.ftqq.com/${SERVER_CHAN_KEY}.send?title=${title}&desp=${desp}`, { mode: 'no-cors' });
+                }
+
+                alert("发布成功！微信已同步。");
                 loadDashboard();
-            } catch (err) { alert("失败: " + err.message); }
+            } catch (err) { 
+                alert("失败: " + err.message); 
+            } finally {
+                saveBtn.disabled = false;
+                saveBtn.innerText = "🚀 发布并推送微信";
+            }
         }
 
         function triggerCamera(id) { document.getElementById(`cam-${id}`).click(); }
@@ -184,7 +202,7 @@
                 await client.storage.from('HOMEWORK_PHOTOS').upload(fileName, file);
                 const { data: urlData } = client.storage.from('HOMEWORK_PHOTOS').getPublicUrl(fileName);
                 await client.from('HOMEWORK_TASKS').update({ image_url: urlData.publicUrl }).eq('id', taskId);
-                alert("上传成功");
+                alert("照片上传成功");
                 loadDashboard();
             } catch (err) { alert("上传失败: " + err.message); btn.innerText = "📸"; }
         }
