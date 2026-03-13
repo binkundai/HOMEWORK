@@ -1,151 +1,212 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>家庭作业布置系统 🌟</title>
-  <!-- 引入 Tailwind CSS (让界面好看) -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <!-- 引入 Vue 3 -->
-  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
-  <!-- 引入 Supabase JS -->
-  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>儿童作业布置系统</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; max-width: 600px; margin: auto; }
+        .hidden { display: none; }
+        .login-box, .app-box { border: 1px solid #ccc; padding: 20px; border-radius: 8px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        button, input, select { padding: 8px; margin-top: 10px; }
+        .camera-btn { background-color: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer;}
+        .camera-input { display: none; }
+    </style>
 </head>
-<body class="bg-gray-100 p-4 font-sans">
-  <div id="app" class="max-w-md mx-auto">
-    <h1 class="text-2xl font-bold text-center text-blue-600 mb-6">🏆 家庭作业布置系统</h1>
+<body>
 
-    <!-- 角色切换 -->
-    <div class="flex justify-center space-x-2 mb-6">
-      <button @click="role = 'admin'" :class="role==='admin'?'bg-blue-500 text-white':'bg-white text-gray-700'" class="px-4 py-2 rounded shadow">管理员</button>
-      <button @click="role = 'dudu'" :class="role==='dudu'?'bg-green-500 text-white':'bg-white text-gray-700'" class="px-4 py-2 rounded shadow">👦 嘟嘟</button>
-      <button @click="role = 'bobo'" :class="role==='bobo'?'bg-yellow-500 text-white':'bg-white text-gray-700'" class="px-4 py-2 rounded shadow">🧒 啵啵</button>
-    </div>
-
-    <!-- 统计看板 -->
-    <div class="bg-white rounded-lg shadow p-4 mb-6 flex justify-around text-center">
-      <div v-for="kid in kids" :key="kid.id">
-        <div class="text-lg font-bold">{{ kid.name }}</div>
-        <div class="text-2xl text-orange-500">🌟 {{ kid.total_stars }}</div>
-      </div>
-    </div>
-
-    <!-- ================= 管理员视图 ================= -->
-    <div v-if="role === 'admin'" class="bg-white rounded-lg shadow p-4">
-      <h2 class="text-lg font-bold mb-4">布置新任务</h2>
-      <div class="space-y-3">
-        <select v-model="newTask.kid_id" class="w-full border rounded p-2">
-          <option value="dudu">指派给：嘟嘟</option>
-          <option value="bobo">指派给：啵啵</option>
+    <div id="loginView" class="login-box">
+        <h2>系统登录</h2>
+        <select id="userRole">
+            <option value="admin">管理员 (家长)</option>
+            <option value="dudu">嘟嘟</option>
+            <option value="bobo">啵啵</option>
         </select>
-        <input v-model="newTask.task_name" type="text" placeholder="任务内容 (如: 阅读20分钟)" class="w-full border rounded p-2">
-        <div class="flex items-center space-x-2">
-          <span>奖励星星数:</span>
-          <input v-model="newTask.stars" type="number" min="1" max="10" class="w-16 border rounded p-1 text-center">
-        </div>
-        <button @click="addTask" class="w-full bg-blue-500 text-white font-bold py-2 rounded hover:bg-blue-600">发布任务</button>
-      </div>
+        <br>
+        <input type="password" id="password" placeholder="请输入密码">
+        <br>
+        <button onclick="login()">登录</button>
+        <p id="loginError" style="color: red; display: none;">密码错误！</p>
     </div>
 
-    <!-- ================= 孩子视图 (嘟嘟 / 啵啵) ================= -->
-    <div v-else class="bg-white rounded-lg shadow p-4">
-      <h2 class="text-lg font-bold mb-4">{{ role === 'dudu' ? '嘟嘟' : '啵啵' }} 的今日任务</h2>
-      <div v-if="myTasks.length === 0" class="text-gray-500 text-center py-4">今天还没有任务哦，去玩吧！</div>
-      
-      <div v-for="task in myTasks" :key="task.id" class="border-b last:border-0 py-3 flex justify-between items-center">
-        <div>
-          <div class="text-gray-800 font-medium" :class="{'line-through text-gray-400': task.is_completed}">{{ task.task_name }}</div>
-          <div class="text-sm text-orange-500">奖励: {{ task.stars }} 颗星</div>
-        </div>
-        <div>
-          <button v-if="!task.is_completed" @click="completeTask(task)" class="bg-green-500 text-white px-3 py-1 rounded shadow text-sm">✅ 完成</button>
-          <span v-else class="text-gray-400 font-bold">已完成</span>
-        </div>
-      </div>
-    </div>
-  </div>
+    <div id="appView" class="app-box hidden">
+        <h2 id="dateTitle"></h2>
+        <p>当前用户: <span id="currentUser"></span> <button onclick="logout()">退出</button></p>
+        
+        <table id="homeworkTable">
+            <thead>
+                <tr>
+                    <th>学科</th>
+                    <th>作业内容</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody id="homeworkList">
+                </tbody>
+        </table>
 
-  <script>
-    // ================= 配置区 (请替换为你自己的) =================
-    const SUPABASE_URL = 'YOUR_SUPABASE_URL'; 
-    const SUPABASE_KEY = 'YOUR_SUPABASE_ANON_KEY';
+        <button id="addTaskBtn" class="hidden" onclick="addTask()">+ 增加一项作业</button>
+    </div>
+
+    <datalist id="subjects">
+        <option value="语文"></option>
+        <option value="数学"></option>
+        <option value="英语"></option>
+        <option value="学而思"></option>
+        <option value="乐读"></option>
+        <option value="画画"></option>
+    </datalist>
+
+    <script>
+        // 用户配置
+        const users = {
+            'admin': { pass: '840802', name: '管理员' },
+            'dudu': { pass: 'dudu', name: '嘟嘟' },
+            'bobo': { pass: 'bobo', name: '啵啵' }
+        };
+
+        let currentRole = '';
+
+        // 登录逻辑
+        function login() {
+            const role = document.getElementById('userRole').value;
+            const pwd = document.getElementById('password').value;
+
+            if (users[role] && users[role].pass === pwd) {
+                currentRole = role;
+                document.getElementById('loginView').classList.add('hidden');
+                document.getElementById('appView').classList.remove('hidden');
+                document.getElementById('loginError').style.display = 'none';
+                
+                initApp();
+            } else {
+                document.getElementById('loginError').style.display = 'block';
+            }
+        }
+
+        // 退出逻辑
+        function logout() {
+            currentRole = '';
+            document.getElementById('password').value = '';
+            document.getElementById('loginView').classList.remove('hidden');
+            document.getElementById('appView').classList.add('hidden');
+        }
+
+        // 初始化主界面
+        function initApp() {
+            document.getElementById('currentUser').innerText = users[currentRole].name;
+            
+            // 设置日期标题
+            const today = new Date();
+            const days = ['日', '一', '二', '三', '四', '五', '六'];
+            const dateStr = `${today.getFullYear()}年${today.getMonth() + 1}月${today.getDate()}日 星期${days[today.getDay()]}`;
+            document.getElementById('dateTitle').innerText = dateStr;
+
+            // 权限控制：仅管理员可添加作业
+            if (currentRole === 'admin') {
+                document.getElementById('addTaskBtn').classList.remove('hidden');
+                // 默认初始化一行空作业
+                document.getElementById('homeworkList').innerHTML = ''; 
+                addTask();
+            } else {
+                document.getElementById('addTaskBtn').classList.add('hidden');
+                // 模拟加载已布置的作业
+                renderUserView(); 
+            }
+        }
+
+        // 增加一行作业
+        function addTask() {
+            const tbody = document.getElementById('homeworkList');
+            const tr = document.createElement('tr');
+            
+            // 学科列 (使用 datalist 实现既能选又能填)
+            let subjectCol = `<td><input list="subjects" placeholder="选择或输入" class="subject-input"></td>`;
+            // 内容列
+            let contentCol = `<td><input type="text" placeholder="输入作业内容"></td>`;
+            // 按钮列 (管理员可以删除行，也可以测试上传)
+            let actionCol = `
+                <td>
+                    <label class="camera-btn">
+                        📷 拍照上传
+                        <input type="file" accept="image/*" capture="environment" class="camera-input" onchange="handleUpload(this)">
+                    </label>
+                    <button onclick="this.parentElement.parentElement.remove()" style="background: red; color: white; border: none; padding: 5px;">删除</button>
+                </td>`;
+
+            tr.innerHTML = subjectCol + contentCol + actionCol;
+            tbody.appendChild(tr);
+        }
+
+        // 孩子视图（仅查看和上传）
+        function renderUserView() {
+            const tbody = document.getElementById('homeworkList');
+            // 这里应该是从云端拉取数据，这里用硬编码演示
+            tbody.innerHTML = `
+                <tr>
+                    <td>数学</td>
+                    <td>完成口算练习册第10页</td>
+                    <td>
+                        <label class="camera-btn">
+                            📷 拍照上传
+                            <input type="file" accept="image/*" capture="environment" class="camera-input" onchange="handleUpload(this)">
+                        </label>
+                    </td>
+                </tr>
+            `;
+        }
+
+        // 处理照片上传后的逻辑
+        function handleUpload(inputElement) {
+            const file = inputElement.files[0];
+            if (file) {
+                alert(`选择了文件: ${file.name}\n接下来可以将该文件发送到云端。`);
+                // 这里可以添加将图片发送到后端服务器的代码
+            }
+        }
+      // 初始化时检查是否已配置 Token
+function checkSystemConfig() {
+    const savedToken = localStorage.getItem('SYSTEM_API_TOKEN');
     
-    const WXPUSHER_APP_TOKEN = 'YOUR_WXPUSHER_APP_TOKEN';
-    // 收到通知的微信 UID，可以填多个（比如你和爱人的UID）
-    const WXPUSHER_UIDS =['YOUR_UID_1', 'YOUR_UID_2']; 
-    // ==============================================================
+    if (!savedToken) {
+        // 如果没有 Token，显示配置界面，隐藏登录界面
+        document.getElementById('configView').classList.remove('hidden');
+        document.getElementById('loginView').classList.add('hidden');
+    } else {
+        // 如果已有 Token，直接显示登录界面
+        document.getElementById('configView').classList.add('hidden');
+        document.getElementById('loginView').classList.remove('hidden');
+        // 这里可以将 token 赋值给全局变量供后续 API 调用
+        window.apiToken = savedToken; 
+    }
+}
 
-    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-    const { createApp, ref, computed, onMounted } = Vue;
+// 保存 Token 的动作
+function saveToken() {
+    const inputToken = document.getElementById('tokenInput').value;
+    if (inputToken.trim() === '') {
+        alert('Token 不能为空！');
+        return;
+    }
+    
+    // 存入浏览器的 localStorage
+    localStorage.setItem('SYSTEM_API_TOKEN', inputToken);
+    alert('配置已保存！只有清理浏览器缓存才会失效。');
+    
+    // 重新运行检查逻辑，跳转到登录页
+    checkSystemConfig();
+}
 
-    createApp({
-      setup() {
-        const role = ref('admin'); // admin, dudu, bobo
-        const kids = ref([]);
-        const tasks = ref([]);
-        const newTask = ref({ kid_id: 'dudu', task_name: '', stars: 1 });
-
-        // 过滤出当前选择孩子的任务
-        const myTasks = computed(() => {
-          return tasks.value.filter(t => t.kid_id === role.value);
-        });
-
-        // 从数据库加载数据
-        const loadData = async () => {
-          const { data: kidsData } = await supabase.from('kids').select('*').order('id');
-          kids.value = kidsData ||[];
-          // 只加载当天的任务
-          const { data: tasksData } = await supabase.from('tasks').select('*').order('created_at', { ascending: false });
-          tasks.value = tasksData ||[];
-        };
-
-        // 添加任务
-        const addTask = async () => {
-          if (!newTask.value.task_name) return alert("请填写任务内容！");
-          await supabase.from('tasks').insert([newTask.value]);
-          newTask.value.task_name = ''; // 清空输入框
-          alert("任务发布成功！");
-          loadData();
-        };
-
-        // 孩子完成任务
-        const completeTask = async (task) => {
-          // 1. 在数据库中标记任务为完成
-          await supabase.from('tasks').update({ is_completed: true }).eq('id', task.id);
-          
-          // 2. 给对应的小孩加星星
-          const kid = kids.value.find(k => k.id === task.kid_id);
-          const newStars = kid.total_stars + task.stars;
-          await supabase.from('kids').update({ total_stars: newStars }).eq('id', task.kid_id);
-
-          // 3. 推送微信消息
-          const kidName = task.kid_id === 'dudu' ? '嘟嘟' : '啵啵';
-          sendWechatMsg(`🎉 喜报！${kidName} 刚刚完成了任务【${task.task_name}】！\n🌟 获得奖励：${task.stars} 颗星星。\n🏆 当前总星星数：${newStars} 颗。`);
-          
-          loadData();
-        };
-
-        // 发送微信推送 (WxPusher API)
-        const sendWechatMsg = (content) => {
-          fetch('https://wxpusher.zjiecode.com/api/send/message', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              appToken: WXPUSHER_APP_TOKEN,
-              content: content,
-              contentType: 1, // 1表示文字
-              uids: WXPUSHER_UIDS
-            })
-          });
-        };
-
-        onMounted(() => {
-          loadData();
-        });
-
-        return { role, kids, newTask, myTasks, addTask, completeTask };
-      }
-    }).mount('#app');
-  </script>
+// 页面加载时执行
+window.onload = checkSystemConfig;
+      <div id="configView" class="login-box hidden">
+    <h2>⚙️ 系统初始化</h2>
+    <p style="font-size: 0.9em; color: #666;">首次使用，请配置后端 API Token。该数据仅保存在您当前设备的浏览器中。</p>
+    <input type="password" id="tokenInput" placeholder="请输入 Token / API Key">
+    <button onclick="saveToken()">保存并进入系统</button>
+</div>
+    </script>
 </body>
 </html>
