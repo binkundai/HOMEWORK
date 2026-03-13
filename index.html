@@ -25,7 +25,6 @@
         .img-preview { width: 40px; height: 40px; object-fit: cover; border-radius: 4px; margin-right: 5px; vertical-align: middle; }
         .footer-tool { margin-top: 30px; font-size: 11px; color: #bbb; text-align: center; cursor: pointer; }
         .user-info { font-size: 13px; color: #666; margin-bottom: 10px; display: flex; justify-content: space-between; }
-        .status-done { color: #34c759; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -67,10 +66,10 @@
         <button id="saveAllBtn" class="btn-save hidden" onclick="saveHomeworkToCloud()">🚀 发布今日作业</button>
     </div>
 
-    <div class="footer-tool" onclick="location.reload()">刷新页面</div>
+    <div class="footer-tool" onclick="location.reload()">手动刷新</div>
 
     <script>
-        // --- 初始化 Supabase ---
+        // --- 初始化 Supabase (已更新表名和大写配置) ---
         const SB_URL = "https://mupjybbafixsmdlsqxxq.supabase.co";
         const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im11cGp5YmJhZml4c21kbHNxeHhxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwMzUwMTcsImV4cCI6MjA4ODYxMTAxN30.bfNvl_e30pv8EVNeMcJj7O60p96ltp96J2abm2YT7hAeyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im11cGp5YmJhZml4c21kbHNxeHhxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwMzUwMTcsImV4cCI6MjA4ODYxMTAxN30.bfNvl_e30pv8EVNeMcJj7O60p96ltp96J2abm2YT7hA";
         const supabase = window.supabase.createClient(SB_URL, SB_KEY);
@@ -87,19 +86,23 @@
         // 获取当前日期字符串 YYYY-MM-DD
         const getTodayStr = () => new Date().toISOString().split('T')[0];
 
-        window.onload = () => {
-            updateDateHeader();
-        };
+        window.onload = () => { updateDateHeader(); };
 
-        function login() {
+        async function login() {
             const role = document.getElementById('userRole').value;
             const pwd = document.getElementById('password').value;
             if (users[role] && users[role].pass === pwd) {
                 currentRole = role;
                 document.getElementById('currentUserDisplay').innerText = users[role].name;
-                document.getElementById('loginView').classList.add('hidden');
-                document.getElementById('appView').classList.remove('hidden');
-                initApp();
+                
+                try {
+                    // 预加载数据，确保数据库连接正常后再跳转
+                    await initApp();
+                    document.getElementById('loginView').classList.add('hidden');
+                    document.getElementById('appView').classList.remove('hidden');
+                } catch (err) {
+                    alert("无法连接到数据库: " + err.message);
+                }
             } else {
                 document.getElementById('loginError').style.display = 'block';
             }
@@ -115,7 +118,7 @@
 
         async function initApp() {
             const list = document.getElementById('homeworkList');
-            list.innerHTML = '<tr><td colspan="3">数据加载中...</td></tr>';
+            list.innerHTML = '<tr><td colspan="3">数据拉取中...</td></tr>';
 
             if (currentRole === 'admin') {
                 document.getElementById('adminControls').classList.remove('hidden');
@@ -128,9 +131,10 @@
             }
         }
 
-        // 管理员：加载或初始化输入行
         async function loadAdminTasks() {
-            const { data } = await supabase.from('homework_tasks').select('*').eq('date_str', getTodayStr());
+            const { data, error } = await supabase.from('HOMEWORK_TASKS').select('*').eq('date_str', getTodayStr());
+            if (error) throw error;
+
             const list = document.getElementById('homeworkList');
             list.innerHTML = '';
             if (data && data.length > 0) {
@@ -153,31 +157,33 @@
             tbody.appendChild(tr);
         }
 
-        // 管理员：保存作业到云端
         async function saveHomeworkToCloud() {
             const rows = document.querySelectorAll('#homeworkList tr');
             const tasks = [];
             const dateStr = getTodayStr();
 
             rows.forEach(row => {
-                const subject = row.querySelector('.sub-input').value;
-                const content = row.querySelector('.cont-input').value;
-                if (content) tasks.push({ date_str: dateStr, subject, content });
+                const subEl = row.querySelector('.sub-input');
+                const contEl = row.querySelector('.cont-input');
+                if (subEl && contEl && contEl.value.trim()) {
+                    tasks.push({ date_str: dateStr, subject: subEl.value, content: contEl.value });
+                }
             });
 
             if (tasks.length === 0) return alert("请先填写作业内容");
 
-            // 先删除旧的，再插入新的（覆盖更新策略）
-            await supabase.from('homework_tasks').delete().eq('date_str', dateStr);
-            const { error } = await supabase.from('homework_tasks').insert(tasks);
+            const { error: delError } = await supabase.from('HOMEWORK_TASKS').delete().eq('date_str', dateStr);
+            if (delError) return alert("清理旧数据失败: " + delError.message);
 
-            if (!error) alert("今日作业发布成功！");
-            else alert("保存失败：" + error.message);
+            const { error: insError } = await supabase.from('HOMEWORK_TASKS').insert(tasks);
+            if (!insError) alert("今日作业发布成功！");
+            else alert("保存失败：" + insError.message);
         }
 
-        // 用户：加载作业
         async function loadUserTasks() {
-            const { data } = await supabase.from('homework_tasks').select('*').eq('date_str', getTodayStr());
+            const { data, error } = await supabase.from('HOMEWORK_TASKS').select('*').eq('date_str', getTodayStr());
+            if (error) throw error;
+
             const list = document.getElementById('homeworkList');
             list.innerHTML = '';
             
@@ -206,37 +212,33 @@
             });
         }
 
-        // 用户：处理上传
         async function handleFileUpload(input, taskId) {
             if (!input.files || !input.files[0]) return;
             const file = input.files[0];
             const fileExt = file.name.split('.').pop();
             const fileName = `${taskId}_${Date.now()}.${fileExt}`;
-            const filePath = `HOMEWORK_PHOTOS/${fileName}`;
 
             const label = input.parentElement;
+            const originalText = label.innerText;
             label.innerText = "上传中...";
 
-            // 1. 上传图片到 Storage
             const { error: uploadError } = await supabase.storage
                 .from('HOMEWORK_PHOTOS')
                 .upload(fileName, file);
 
             if (uploadError) {
-                alert("图片上传失败");
-                label.innerText = "重试";
+                alert("上传失败: " + uploadError.message);
+                label.innerText = originalText;
                 return;
             }
 
-            // 2. 获取公共 URL
             const { data: urlData } = supabase.storage.from('HOMEWORK_PHOTOS').getPublicUrl(fileName);
             const publicUrl = urlData.publicUrl;
 
-            // 3. 更新数据库
-            await supabase.from('homework_tasks').update({ image_url: publicUrl }).eq('id', taskId);
+            await supabase.from('HOMEWORK_TASKS').update({ image_url: publicUrl }).eq('id', taskId);
 
-            alert("作业上传成功！");
-            initApp(); // 刷新列表查看图片
+            alert("照片已成功保存到云端！");
+            initApp(); 
         }
     </script>
 </body>
