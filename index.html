@@ -10,19 +10,20 @@
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 15px; max-width: 800px; margin: auto; background-color: var(--secondary-color); color: #333; }
         .hidden { display: none !important; }
         .card { background: white; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); padding: 20px; margin-bottom: 20px; }
-        h2 { margin-top: 0; color: var(--primary-color); border-bottom: 2px solid #eee; padding-bottom: 10px; font-size: 1.15rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        h2 { margin-top: 0; color: var(--primary-color); border-bottom: 2px solid #eee; padding-bottom: 10px; font-size: 1.1rem; white-space: nowrap; }
         table { width: 100%; border-collapse: collapse; margin-top: 15px; background: white; table-layout: fixed; }
         th, td { border: 1px solid #eee; padding: 10px 8px; text-align: left; font-size: 14px; word-break: break-all; }
         th { background-color: #fcfcfc; font-weight: 600; }
-        select, input { width: 100%; padding: 8px; margin: 4px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 14px; }
-        button { cursor: pointer; padding: 8px 15px; border: none; border-radius: 6px; font-weight: bold; transition: 0.3s; }
+        select, input { width: 100%; padding: 10px; margin: 4px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 16px; } /* 移动端 16px 防止缩放 */
+        button { cursor: pointer; padding: 10px 15px; border: none; border-radius: 6px; font-weight: bold; transition: 0.3s; }
         .btn-primary { background-color: var(--primary-color); color: white; width: 100%; margin-top: 10px; }
-        .btn-add { background-color: #34c759; color: white; margin-bottom: 10px; width: auto; font-size: 14px; }
+        .btn-primary:disabled { background-color: #ccc; }
+        .btn-add { background-color: #34c759; color: white; margin-bottom: 10px; font-size: 14px; }
         .btn-save { background-color: #ff9500; color: white; width: 100%; margin-top: 20px; }
         .btn-danger { background-color: #ff3b30; color: white; font-size: 11px; padding: 4px 8px; }
         .camera-label { display: inline-block; background-color: #5856d6; color: white; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 12px; text-align: center; }
         .camera-input { display: none; }
-        .img-preview { width: 40px; height: 40px; object-fit: cover; border-radius: 4px; margin-right: 5px; vertical-align: middle; }
+        .img-preview { width: 40px; height: 40px; object-fit: cover; border-radius: 4px; vertical-align: middle; }
         .footer-tool { margin-top: 30px; font-size: 11px; color: #bbb; text-align: center; cursor: pointer; }
         .user-info { font-size: 13px; color: #666; margin-bottom: 10px; display: flex; justify-content: space-between; }
     </style>
@@ -37,7 +38,7 @@
             <option value="bobo">啵啵</option>
         </select>
         <input type="password" id="password" placeholder="请输入访问密码">
-        <button class="btn-primary" onclick="login()">登录</button>
+        <button id="loginBtn" class="btn-primary" onclick="login()">登录</button>
         <p id="loginError" style="color: #ff3b30; font-size: 12px; display: none; text-align: center; margin-top: 10px;">⚠️ 密码不正确</p>
     </div>
 
@@ -45,7 +46,7 @@
         <h2 id="dateTitle">加载中...</h2>
         <div class="user-info">
             <span>当前用户：<strong id="currentUserDisplay">--</strong></span>
-            <span onclick="logout()" style="text-decoration: underline; cursor: pointer; color: #999;">退出</span>
+            <span onclick="location.reload()" style="text-decoration: underline; cursor: pointer; color: #999;">退出</span>
         </div>
 
         <div id="adminControls" class="hidden">
@@ -57,7 +58,7 @@
                 <tr>
                     <th width="35%">学科</th>
                     <th width="40%">作业内容</th>
-                    <th width="25%">操作/状态</th>
+                    <th width="25%">操作</th>
                 </tr>
             </thead>
             <tbody id="homeworkList"></tbody>
@@ -66,13 +67,19 @@
         <button id="saveAllBtn" class="btn-save hidden" onclick="saveHomeworkToCloud()">🚀 发布今日作业</button>
     </div>
 
-    <div class="footer-tool" onclick="location.reload()">手动刷新</div>
+    <div class="footer-tool" onclick="location.reload()">无法登录？点击刷新</div>
 
     <script>
-        // --- 初始化 Supabase (已更新表名和大写配置) ---
+        // --- 初始化配置 ---
         const SB_URL = "https://mupjybbafixsmdlsqxxq.supabase.co";
         const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im11cGp5YmJhZml4c21kbHNxeHhxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwMzUwMTcsImV4cCI6MjA4ODYxMTAxN30.bfNvl_e30pv8EVNeMcJj7O60p96ltp96J2abm2YT7hAeyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im11cGp5YmJhZml4c21kbHNxeHhxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwMzUwMTcsImV4cCI6MjA4ODYxMTAxN30.bfNvl_e30pv8EVNeMcJj7O60p96ltp96J2abm2YT7hA";
-        const supabase = window.supabase.createClient(SB_URL, SB_KEY);
+        
+        let supabase;
+        try {
+            supabase = window.supabase.createClient(SB_URL, SB_KEY);
+        } catch (e) {
+            alert("SDK加载失败，请检查网络或CDN地址");
+        }
 
         const users = {
             'admin': { pass: '840802', name: '家长' },
@@ -83,32 +90,10 @@
         const subjectOptions = ["学而思数学", "乐读数学", "集训队", "乐读语文", "乐读英语", "校内作业", "课外作业"];
         let currentRole = '';
 
-        // 获取当前日期字符串 YYYY-MM-DD
-        const getTodayStr = () => new Date().toISOString().split('T')[0];
-
-        window.onload = () => { updateDateHeader(); };
-
-        async function login() {
-            const role = document.getElementById('userRole').value;
-            const pwd = document.getElementById('password').value;
-            if (users[role] && users[role].pass === pwd) {
-                currentRole = role;
-                document.getElementById('currentUserDisplay').innerText = users[role].name;
-                
-                try {
-                    // 预加载数据，确保数据库连接正常后再跳转
-                    await initApp();
-                    document.getElementById('loginView').classList.add('hidden');
-                    document.getElementById('appView').classList.remove('hidden');
-                } catch (err) {
-                    alert("无法连接到数据库: " + err.message);
-                }
-            } else {
-                document.getElementById('loginError').style.display = 'block';
-            }
-        }
-
-        function logout() { location.reload(); }
+        const getTodayStr = () => {
+            const now = new Date();
+            return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        };
 
         function updateDateHeader() {
             const today = new Date();
@@ -116,9 +101,44 @@
             document.getElementById('dateTitle').innerText = `${today.getFullYear()}年${today.getMonth() + 1}月${today.getDate()}日 ${weeks[today.getDay()]}`;
         }
 
+        // --- 核心登录函数 ---
+        async function login() {
+            const role = document.getElementById('userRole').value;
+            const pwd = document.getElementById('password').value;
+            const btn = document.getElementById('loginBtn');
+            const errorTips = document.getElementById('loginError');
+
+            if (users[role] && users[role].pass === pwd) {
+                // 1. 界面反馈
+                btn.disabled = true;
+                btn.innerText = "正在连接云端...";
+                errorTips.style.display = 'none';
+                currentRole = role;
+
+                // 2. 尝试执行数据初始化
+                try {
+                    console.log("正在尝试初始化应用...");
+                    await initApp();
+                    
+                    // 3. 成功后跳转
+                    document.getElementById('loginView').classList.add('hidden');
+                    document.getElementById('appView').classList.remove('hidden');
+                    document.getElementById('currentUserDisplay').innerText = users[role].name;
+                } catch (err) {
+                    console.error(err);
+                    alert("登录失败！具体原因：\n" + (err.message || "未知数据库错误"));
+                    btn.disabled = false;
+                    btn.innerText = "登录";
+                }
+            } else {
+                errorTips.style.display = 'block';
+            }
+        }
+
         async function initApp() {
+            updateDateHeader();
             const list = document.getElementById('homeworkList');
-            list.innerHTML = '<tr><td colspan="3">数据拉取中...</td></tr>';
+            list.innerHTML = '<tr><td colspan="3">拉取数据中...</td></tr>';
 
             if (currentRole === 'admin') {
                 document.getElementById('adminControls').classList.remove('hidden');
@@ -158,26 +178,31 @@
         }
 
         async function saveHomeworkToCloud() {
+            const btn = document.getElementById('saveAllBtn');
+            btn.disabled = true;
+            btn.innerText = "正在发布...";
+
             const rows = document.querySelectorAll('#homeworkList tr');
             const tasks = [];
             const dateStr = getTodayStr();
 
             rows.forEach(row => {
-                const subEl = row.querySelector('.sub-input');
-                const contEl = row.querySelector('.cont-input');
-                if (subEl && contEl && contEl.value.trim()) {
-                    tasks.push({ date_str: dateStr, subject: subEl.value, content: contEl.value });
-                }
+                const sub = row.querySelector('.sub-input').value;
+                const cont = row.querySelector('.cont-input').value;
+                if (cont.trim()) tasks.push({ date_str: dateStr, subject: sub, content: cont });
             });
 
-            if (tasks.length === 0) return alert("请先填写作业内容");
-
-            const { error: delError } = await supabase.from('HOMEWORK_TASKS').delete().eq('date_str', dateStr);
-            if (delError) return alert("清理旧数据失败: " + delError.message);
-
-            const { error: insError } = await supabase.from('HOMEWORK_TASKS').insert(tasks);
-            if (!insError) alert("今日作业发布成功！");
-            else alert("保存失败：" + insError.message);
+            try {
+                await supabase.from('HOMEWORK_TASKS').delete().eq('date_str', dateStr);
+                const { error } = await supabase.from('HOMEWORK_TASKS').insert(tasks);
+                if (error) throw error;
+                alert("今日作业发布成功！");
+            } catch (err) {
+                alert("发布失败: " + err.message);
+            } finally {
+                btn.disabled = false;
+                btn.innerText = "🚀 发布今日作业";
+            }
         }
 
         async function loadUserTasks() {
@@ -215,30 +240,24 @@
         async function handleFileUpload(input, taskId) {
             if (!input.files || !input.files[0]) return;
             const file = input.files[0];
-            const fileExt = file.name.split('.').pop();
-            const fileName = `${taskId}_${Date.now()}.${fileExt}`;
+            const fileName = `job_${taskId}_${Date.now()}.jpg`;
 
             const label = input.parentElement;
-            const originalText = label.innerText;
             label.innerText = "上传中...";
 
-            const { error: uploadError } = await supabase.storage
-                .from('HOMEWORK_PHOTOS')
-                .upload(fileName, file);
+            try {
+                const { error: upErr } = await supabase.storage.from('HOMEWORK_PHOTOS').upload(fileName, file);
+                if (upErr) throw upErr;
 
-            if (uploadError) {
-                alert("上传失败: " + uploadError.message);
-                label.innerText = originalText;
-                return;
+                const { data } = supabase.storage.from('HOMEWORK_PHOTOS').getPublicUrl(fileName);
+                await supabase.from('HOMEWORK_TASKS').update({ image_url: data.publicUrl }).eq('id', taskId);
+
+                alert("照片上传成功！");
+                loadUserTasks();
+            } catch (err) {
+                alert("上传出错: " + err.message);
+                label.innerText = "重试";
             }
-
-            const { data: urlData } = supabase.storage.from('HOMEWORK_PHOTOS').getPublicUrl(fileName);
-            const publicUrl = urlData.publicUrl;
-
-            await supabase.from('HOMEWORK_TASKS').update({ image_url: publicUrl }).eq('id', taskId);
-
-            alert("照片已成功保存到云端！");
-            initApp(); 
         }
     </script>
 </body>
