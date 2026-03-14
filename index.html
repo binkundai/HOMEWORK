@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>家庭作业管理系统 v2.3</title>
+    <title>家庭作业管理系统 v2.4</title>
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <style>
         :root { --primary-color: #4a90e2; --bg-color: #f5f7fa; --dudu-color: #8b572a; --bobo-color: #666; --del-color: #ff3b30; }
@@ -12,7 +12,7 @@
         .hidden { display: none !important; }
         input, select, button { width: 100%; padding: 10px; margin: 4px 0; border-radius: 6px; border: 1px solid #ddd; font-size: 14px; box-sizing: border-box; }
         button { background: var(--primary-color); color: white; border: none; font-weight: bold; cursor: pointer; }
-        button:disabled { background: #ccc; cursor: not-allowed; }
+        button:disabled { background: #ccc !important; cursor: not-allowed; }
         
         .date-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
         .nav-btn { width: 35px; background: none; color: var(--primary-color); font-size: 18px; padding: 0; }
@@ -21,16 +21,17 @@
         h3 { margin: 12px 0 4px 0; font-size: 0.9rem; border-left: 3px solid var(--primary-color); padding-left: 6px; }
         table { width: 100%; border-collapse: collapse; table-layout: fixed; margin-bottom: 8px; }
         td, th { border: 1px solid #eee; padding: 5px 3px; font-size: 11px; text-align: left; }
+        th { background: #fafafa; }
         
-        /* 状态与操作栏排版 */
         .status-col { display: flex; flex-direction: column; gap: 4px; align-items: center; }
         .status-row { display: flex; align-items: center; gap: 4px; justify-content: center; font-size: 16px; }
         .status-icon { cursor: pointer; filter: grayscale(1); opacity: 0.3; transition: 0.2s; }
         .status-active { filter: grayscale(0); opacity: 1; }
 
         .action-col { display: flex; flex-direction: column; gap: 2px; }
-        .mini-btn { width: 100%; padding: 3px 0; font-size: 10px; margin: 0; border-radius: 4px; }
+        .mini-btn { width: 100%; padding: 4px 0; font-size: 10px; margin: 0; border-radius: 4px; line-height: 1.2; }
         .btn-move { background: #5bc0de; }
+        .btn-copy { background: #5cb85c; } /* 复制功能用绿色 */
         .btn-move-tmr { background: #f0ad4e; }
         .btn-del { background: var(--del-color); }
 
@@ -42,7 +43,7 @@
 <body>
 
     <div id="loginView" class="card">
-        <h2 style="text-align:center; color:var(--primary-color);">🏠 作业管理系统</h2>
+        <h2 style="text-align:center; color:var(--primary-color); margin-top:0;">🏠 作业管理系统</h2>
         <select id="userRole">
             <option value="admin">家长 (管理员)</option>
             <option value="dudu">嘟嘟</option>
@@ -126,22 +127,17 @@
             } else alert("密码错误");
         }
 
-        // 核心：自动保存并切换日期
         async function changeDate(days) {
-            if (currentRole === 'admin') await doSave(false); // 切换前静默保存
-            const newDate = new Date(viewDate);
-            newDate.setDate(newDate.getDate() + days);
+            if (currentRole === 'admin') await doSave(false);
+            viewDate.setDate(viewDate.getDate() + days);
             const today = new Date();
             const tomorrow = new Date(today.getTime() + 864e5);
-            if (newDate > tomorrow && getStr(newDate) !== getStr(tomorrow)) return;
-            viewDate = newDate;
+            if (viewDate > tomorrow && getStr(viewDate) !== getStr(tomorrow)) {
+                viewDate.setDate(viewDate.getDate() - days);
+                return;
+            }
             loadDashboard();
         }
-
-        // 页面关闭前自动保存
-        window.addEventListener('beforeunload', () => {
-            if (currentRole === 'admin') doSave(false);
-        });
 
         async function loadDashboard() {
             const dateStr = getStr(viewDate);
@@ -163,12 +159,23 @@
                 if (isAdmin) {
                     document.getElementById('adminArea').classList.remove('hidden');
                     document.getElementById('studentArea').classList.add('hidden');
-                    if (data && data.length > 0) {
+                    
+                    // 检查数据库中是否存在通用作业(target_user='all')
+                    const hasCommon = data.some(d => d.target_user === 'all');
+                    
+                    if (hasCommon) {
                         data.forEach(d => addRow(d.target_user || 'all', d));
                     } else if (dateStr === todayStr || dateStr === tomorrowStr) {
-                        // 强制预填逻辑
+                        // 如果没有通用记录，且是今天或明天，强制加载模板
                         defaultCommonTasks.forEach(t => addRow('all', {subject:t.s, content:t.c}));
-                        addRow('dudu'); addRow('bobo');
+                        // 加载可能存在的专属作业
+                        data.filter(d => d.target_user !== 'all').forEach(d => addRow(d.target_user, d));
+                        // 如果专属也是空的，给个空白行
+                        if (!data.some(d => d.target_user === 'dudu')) addRow('dudu');
+                        if (!data.some(d => d.target_user === 'bobo')) addRow('bobo');
+                    } else {
+                        // 历史记录且没数据，保持原样
+                        data.forEach(d => addRow(d.target_user || 'all', d));
                     }
                 } else {
                     document.getElementById('adminArea').classList.add('hidden');
@@ -199,6 +206,9 @@
                 actionHtml += `<button class="mini-btn btn-move" onclick="moveTask(this, 'dudu')">➡嘟专属</button>`;
                 actionHtml += `<button class="mini-btn btn-move" onclick="moveTask(this, 'bobo')">➡啵专属</button>`;
             } else {
+                const targetName = type === 'dudu' ? '啵啵' : '嘟嘟';
+                const targetKey = type === 'dudu' ? 'bobo' : 'dudu';
+                actionHtml += `<button class="mini-btn btn-copy" onclick="copyToOther(this, '${targetKey}')">👯复制给${targetName}</button>`;
                 actionHtml += `<button class="mini-btn btn-move-tmr" onclick="moveTaskToTomorrow(this, '${type}')">📅移至明天</button>`;
             }
             actionHtml += `<button class="mini-btn btn-del" onclick="this.closest('tr').remove()">删除</button></div>`;
@@ -210,32 +220,43 @@
         function toggleQuickStatus(el) {
             el.classList.toggle('status-active');
             if (getStr(viewDate) !== getStr(new Date(Date.now() + 864e5))) {
-                doSave(false); // 只要不是明天，勾选即静默保存
+                doSave(false); 
             }
+        }
+
+        // 复制给对方（不删除原项）
+        function copyToOther(el, toWho) {
+            const tr = el.closest('tr');
+            const sub = tr.querySelector('.s-in').value;
+            const con = tr.querySelector('.c-in').value;
+            if (!con.trim()) return;
+            addRow(toWho, {subject: sub, content: con});
+            doSave(false); // 触发一次保存
         }
 
         async function moveTask(el, toWho) {
             const tr = el.closest('tr');
             const sub = tr.querySelector('.s-in').value, con = tr.querySelector('.c-in').value;
             if (!con.trim()) return;
-            await client.from('HOMEWORK_TASKS').insert({date_str: getStr(viewDate), subject: sub, content: con, target_user: toWho});
-            loadDashboard();
+            // 界面上增加一行
+            addRow(toWho, {subject: sub, content: con});
+            doSave(false); 
         }
 
         async function moveTaskToTomorrow(el, fromWho) {
             const tr = el.closest('tr');
             const sub = tr.querySelector('.s-in').value, con = tr.querySelector('.c-in').value;
             if (!con.trim()) return;
-            const tmr = getStr(new Date(Date.now() + 864e5));
-            await client.from('HOMEWORK_TASKS').insert({date_str: tmr, subject: sub, content: con, target_user: fromWho});
-            alert("已移至明天");
-            loadDashboard();
+            const tmrStr = getStr(new Date(Date.now() + 864e5));
+            // 直接往数据库明天的日期插一条
+            await client.from('HOMEWORK_TASKS').insert({date_str: tmrStr, subject: sub, content: con, target_user: fromWho, status: false});
+            alert("已在明天新建该作业记录");
         }
 
         function addStaticRow(d, isToday) {
             const tr = document.createElement('tr');
             const img = d.image_url ? `<img src="${d.image_url}" class="img-preview" onclick="window.open('${d.image_url}')">` : '';
-            const btn = isToday ? `<button style="width:auto;padding:4px;font-size:10px;background:#5856d6;" onclick="triggerCamera(${d.id})">📸</button>` : '';
+            const btn = isToday ? `<button style="width:auto;padding:4px;font-size:10px;background:#5856d6;" onclick="triggerCamera(${d.id})">📸拍照</button>` : '';
             const myStatus = currentRole === 'dudu' ? d.dudu_status : (currentRole === 'bobo' ? d.bobo_status : d.status);
             tr.innerHTML = `<td>${d.subject}</td><td>${d.content}</td><td style="text-align:center">${myStatus?'🟢':'⚪'}</td><td>${img}${btn}<input type="file" id="cam-${d.id}" accept="image/*" capture="environment" style="display:none" onchange="handleFileSelect(this, ${d.id})"></td>`;
             document.getElementById('studentBody').appendChild(tr);
@@ -248,6 +269,9 @@
 
             ['all', 'dudu', 'bobo'].forEach(type => {
                 const rows = document.querySelectorAll(`#tbl-${type} .list-body tr`);
+                let hasData = false;
+                let sectText = `\n【${type==='all'?'通用':(type==='dudu'?'嘟嘟':'啵啵')}】\n`;
+                
                 rows.forEach(r => {
                     const s = r.querySelector('.s-in').value, c = r.querySelector('.c-in').value;
                     if (c.trim()) {
@@ -259,19 +283,22 @@
                             t.status = r.querySelector('.status-icon').classList.contains('status-active');
                         }
                         tasks.push(t);
-                        if (needPush) pushText += `\n【${type==='all'?'通用':(type==='dudu'?'嘟嘟':'啵啵')}】\n• ${s}: ${c.trim()}\n`;
+                        sectText += `• ${s}: ${c.trim()}\n`;
+                        hasData = true;
                     }
                 });
+                if(hasData) pushText += sectText;
             });
 
             if (tasks.length === 0 && needPush) return;
 
             try {
                 await client.from('HOMEWORK_TASKS').delete().eq('date_str', dateStr);
-                await client.from('HOMEWORK_TASKS').insert(tasks);
+                const { error } = await client.from('HOMEWORK_TASKS').insert(tasks);
+                if (error) throw error;
                 if (needPush && SERVER_CHAN_KEY.startsWith("SCT")) {
                     await fetch(`https://sctapi.ftqq.com/${SERVER_CHAN_KEY}.send?title=${encodeURIComponent("作业已更新")}&desp=${encodeURIComponent(pushText)}`, {mode:'no-cors'});
-                    alert("发布并推送成功！");
+                    alert("已发布并保存！");
                 }
             } catch (err) { console.error("保存失败", err); }
         }
@@ -279,13 +306,14 @@
         function triggerCamera(id) { document.getElementById(`cam-${id}`).click(); }
         async function handleFileSelect(input, taskId) {
             const file = input.files[0]; if (!file) return;
+            const btn = input.previousElementSibling; btn.innerText = "...";
             try {
                 const fn = `hw_${taskId}_${Date.now()}.jpg`;
                 await client.storage.from('HOMEWORK_PHOTOS').upload(fn, file);
                 const { data } = client.storage.from('HOMEWORK_PHOTOS').getPublicUrl(fn);
                 await client.from('HOMEWORK_TASKS').update({ image_url: data.publicUrl }).eq('id', taskId);
                 loadDashboard();
-            } catch (err) { alert("上传失败"); }
+            } catch (err) { alert("上传失败"); btn.innerText = "📸拍照"; }
         }
     </script>
 </body>
