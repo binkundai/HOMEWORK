@@ -246,191 +246,89 @@
             } catch (err) { console.error(err); }
         }
 
-        function addStaticRow(d) {
-            const tr = document.createElement('tr');
-            const img = d.image_url ? `<img src="${d.image_url}" class="img-preview" onclick="window.open('${d.image_url}')">` : '';
-            const aiHtml = d.ai_review ? `<div class="ai-review-box">🤖 AI批改：\n${d.ai_review}</div>` : '';
-            let myStatus = currentRole === 'dudu' ? (d.target_user==='all'?d.dudu_status:d.status) : (d.target_user==='all'?d.bobo_status:d.status);
+function addStaticRow(d, isToday) {
+    const tr = document.createElement('tr');
+    const img = d.image_url ? `<img src="${d.image_url}" class="img-preview" onclick="window.open('${d.image_url}')">` : '';
+    const btn = isToday ? `<button style="width:auto;padding:4px;font-size:10px;background:#5856d6;" onclick="triggerCamera(${d.id})">📸拍照</button>` : '';
+    
+    const myStatus = currentRole === 'dudu' ? d.dudu_status : (currentRole === 'bobo' ? d.bobo_status : d.status);
+    
+    // 重点：增加评语显示区域
+    const aiReviewHtml = d.ai_review ? 
+        `<div style="color:#e67e22; font-size:10px; margin-top:5px; padding:5px; background:#fff9f0; border-radius:4px; border-left:2px solid #ff9500;">
+            🤖 AI老师：${d.ai_review.replace(/\n/g, '<br>')}
+         </div>` : '';
 
-            tr.innerHTML = `
-                <td>${d.subject}</td>
-                <td>${d.content}${aiHtml}</td>
-                <td style="text-align:center">${myStatus?'🟢':'⚪'}</td>
-                <td>${img} <button style="width:auto;padding:4px;font-size:10px;background:#5856d6;" onclick="triggerCamera(${d.id})">📸</button>
-                <input type="file" id="cam-${d.id}" accept="image/*" capture="environment" style="display:none" onchange="handleFileSelect(this, ${d.id})"></td>
-            `;
-            document.getElementById('studentBody').appendChild(tr);
-        }
-
+    tr.innerHTML = `
+        <td>${d.subject}</td>
+        <td>
+            <div>${d.content}</div>
+            ${aiReviewHtml}
+        </td>
+        <td style="text-align:center">${myStatus ? '🟢' : '⚪'}</td>
+        <td>
+            ${img}${btn}
+            <input type="file" id="cam-${d.id}" accept="image/*" capture="environment" style="display:none" onchange="handleFileSelect(this, ${d.id})">
+        </td>`;
+    document.getElementById('studentBody').appendChild(tr);
+}
         function triggerCamera(id) { document.getElementById(`cam-${id}`).click(); }
 
-        async function handleFileSelect(input, taskId) {
-            const file = input.files[0]; if (!file) return;
-            const btn = input.previousElementSibling; 
-            btn.innerText = "⏳识别中";
-            try {
-                const fn = `hw_${taskId}_${Date.now()}.jpg`;
-                await client.storage.from('HOMEWORK_PHOTOS').upload(fn, file);
-                const { data } = client.storage.from('HOMEWORK_PHOTOS').getPublicUrl(fn);
-                await client.from('HOMEWORK_TASKS').update({ image_url: data.publicUrl }).eq('id', taskId);
-                
-                // 等待 AI 批改完成
-                await callQwenAI(data.publicUrl, taskId);
-                btn.innerText = "📸";
-                loadDashboard();
-            } catch (err) { 
-                console.error(err);
-                alert("流程失败，请检查控制台"); 
-                btn.innerText = "📸"; 
-            }
-        }
+async function handleFileSelect(input, taskId) {
+    const file = input.files[0]; 
+    if (!file) return;
+    
+    // 界面反馈
+    const btn = input.previousElementSibling;
+    const originalText = btn.innerText;
+    btn.innerText = "上传中...";
+
+    try {
+        const fn = `hw_${taskId}_${Date.now()}.jpg`;
+        // 1. 上传图片
+        await client.storage.from('HOMEWORK_PHOTOS').upload(fn, file);
+        const { data } = client.storage.from('HOMEWORK_PHOTOS').getPublicUrl(fn);
+        const publicUrl = data.publicUrl;
+
+        // 2. 更新数据库中的图片地址（不影响 ai_review 列）
+        await client.from('HOMEWORK_TASKS').update({ image_url: publicUrl }).eq('id', taskId);
+        
+        btn.innerText = "批改中...";
+        // 3. 触发 AI 批改
+        await callQwenAI(publicUrl, taskId);
+        
+        loadDashboard(); // 批改完刷新界面显示评语
+    } catch (err) { 
+        alert("处理失败"); 
+        console.error(err);
+    } finally {
+        btn.innerText = originalText;
+    }
+}
 
 async function callQwenAI(imageUrl, taskId) {
-    const prompt = `你是一位 拥有20年以上教学经验的小学低年级（1-3年级）特级教师，非常擅长批改学生作业，并用鼓励性的语言给学生反馈。
-
-我将上传一张 学生作业或试卷图片。
-请按照以下步骤进行分析和批改。
-
-第一步：完整识别内容
-
-请先 完整识别图片中的所有题目和学生答案，再进行批改。
-
-如果图片不清晰，请说明 哪些部分无法识别。
-
-第二步：判断科目
-
-该作业只可能属于 以下四种科目之一：
-
-数学
-
-语文
-
-英语
-
-日记
-
-请先判断属于哪一科，然后按对应规则批改。
-
-第三步：批改规则
-一、数学作业
-
-任务：
-
-识别所有题目
-
-判断每一题 对 / 错
-
-标出 错误题号
-
-如果是 应用题，请理解题意并判断答案
-
-输出格式：
-
-数学批改结果(只显示错题)：
-
-题目批改：
-第2题：×（正确答案：）
-第4题：×（正确答案：）
-
-统计结果：
-正确题数：X
-错误题数：X
-正确率：XX%
-
-错误说明：
-第X题：学生答案 ___ ，正确答案 ___
-
-老师评语（50字以内）：
-给出鼓励性评价，并简单提醒注意点。
-
-二、语文作业
-
-任务：
-
-检查以下内容：
-
-汉字是否写对
-
-拼音是否正确
-
-组词是否合理
-
-造句是否通顺
-
-阅读理解答案是否合理
-
-输出格式：
-
-语文批改结果：
-
-需要修改的地方：
-
-___ → 建议：___
-
-___ → 建议：___
-
-___ → 建议：___
-
-老师评语（50字以内）：
-鼓励为主，指出一两点改进建议。
-
-三、英语作业
-
-任务：
-
-检查：
-
-单词拼写
-
-基础语法
-
-答案是否正确
-
-输出格式：
-
-英语批改结果：
-
-错误内容：
-
-原写法：___
-正确写法：___
-
-原写法：___
-正确写法：___
-
-老师评语（50字以内）：
-鼓励学生继续学习。
-
-四、日记 / 看图写话
-
-任务：
-
-识别日记内容
-
-简要总结主题
-
-给出 150字以内鼓励性评语
-
-输出格式：
-
-内容摘要：
-学生写了什么事情（简要总结）
-
-老师评语（150字以内）：
-鼓励为主，可表扬想象力、观察力、表达能力。
-
-第四步：批改原则
-
-请严格遵守：
-
-按 小学1-2年级水平评判
-
-批改要 准确、客观
-
-评价要 鼓励为主，不打击学生
-
-用 简单易懂的老师语气`;
-
+    const prompt = `你是一位小学低年级资深特级教师。请严谨分析这张学生作业或试卷图片。
+该图片仅包含以下四种科目之一，请先识别科目，然后按对应规则批改：
+
+1. 【数学】：
+   - 逐一检查口算/计算题，明确指出哪道题错误（例如：3+5=9 错误，应为8）。
+   - 分析应用题的列式和计算过程是否合乎逻辑。
+   - 给出整体准确率评价。
+
+2. 【日记】：
+   - 识别文字内容，检查错别字。
+   - 提供一段 150 字以内、充满温度和鼓励性的教师评语，肯定孩子的表达。
+
+3. 【英语】：
+   - 检查单词拼写（如大小写、字母顺序）。
+   - 检查语法（如单复数、时态、语序）。
+
+4. 【语文】：
+   - 检查汉字书写（笔画是否规范）和拼音对错。
+   - 判断组词造句是否通顺合理。
+   - 对阅读理解题给出批改意见。
+
+请直接返回批改结果，语言要亲切，适合低年级孩子和家长阅读。`;
     try {
         // 调用云函数
         const { data, error } = await client.functions.invoke('qwen-review', {
