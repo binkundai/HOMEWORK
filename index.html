@@ -285,7 +285,7 @@
             }
         }
 
-     async function callQwenAI(imageUrl, taskId) {
+async function callQwenAI(imageUrl, taskId) {
     const prompt = `你是一位小学小低年级资深特级教师。请分析这张学生作业图片：
     1. 计算题：请检查对错，并告知整体批改结果,并指出哪一题错了。
     2. 日记：识别内容并给出一段 150 字以内的鼓励性评语。
@@ -293,23 +293,34 @@
     请直接返回批改结果文字。`;
 
     try {
-        // 使用 supabase-js 提供的 invoke 方法调用云函数
+        // 调用云函数
         const { data, error } = await client.functions.invoke('qwen-review', {
             body: { imageUrl, prompt }
         });
 
         if (error) throw error;
 
-        console.log("云函数返回结果:", data);
-
-        if (data.output && data.output.choices) {
+        // 核心检查：确保云函数返回了有效的 text
+        if (data && data.output && data.output.choices && data.output.choices[0].message.content[0].text) {
             const aiText = data.output.choices[0].message.content[0].text;
-            // 更新数据库中的 ai_review 字段
-            await client.from('HOMEWORK_TASKS').update({ ai_review: aiText }).eq('id', taskId);
+            
+            // 写入数据库
+            const { error: patchError } = await client
+                .from('HOMEWORK_TASKS')
+                .update({ ai_review: aiText })
+                .eq('id', taskId);
+
+            if (patchError) {
+                console.error("写入数据库失败:", patchError);
+                // 常见的 400 错误可能是列不存在，请确认表里确实有 ai_review 这一列
+                alert("AI 批改完成，但保存失败。请确认数据库表是否有 ai_review 列。");
+            } else {
+                console.log("批改结果保存成功");
+                loadDashboard(); // 刷新界面显示结果
+            }
         }
     } catch (err) {
-        console.error("调用云函数失败:", err);
-        await client.from('HOMEWORK_TASKS').update({ ai_review: "⚠️ AI 批改服务暂时不可用，请联系家长。" }).eq('id', taskId);
+        console.error("调用过程出错:", err);
     }
 }
     </script>
