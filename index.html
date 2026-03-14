@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>家庭作业管理系统 v3.0</title>
+    <title>家庭作业管理系统 v3.1 (AI版)</title>
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <style>
         :root { --primary-color: #4a90e2; --bg-color: #f5f7fa; --dudu-color: #8b572a; --bobo-color: #666; --del-color: #ff3b30; --ai-bg: #fff9f0; --ai-border: #ff9500; }
@@ -12,6 +12,7 @@
         .hidden { display: none !important; }
         input, select, button { width: 100%; padding: 10px; margin: 4px 0; border-radius: 6px; border: 1px solid #ddd; font-size: 14px; box-sizing: border-box; }
         button { background: var(--primary-color); color: white; border: none; font-weight: bold; cursor: pointer; }
+        button:disabled { background: #ccc !important; cursor: not-allowed; }
         
         .date-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
         .nav-btn { width: 35px; background: none; color: var(--primary-color); font-size: 18px; padding: 0; }
@@ -27,9 +28,9 @@
         .status-icon { cursor: pointer; filter: grayscale(1); opacity: 0.3; transition: 0.2s; }
         .status-active { filter: grayscale(0); opacity: 1; }
 
-        /* AI 评语样式优化 */
+        /* AI 评语样式 */
         .ai-review-box { color: #d35400; font-size: 10px; margin-top: 6px; padding: 6px; background: var(--ai-bg); border-radius: 4px; border-left: 2px solid var(--ai-border); white-space: pre-wrap; line-height: 1.4; }
-        .img-preview { width: 32px; height: 32px; object-fit: cover; border-radius: 4px; border: 1px solid #ddd; vertical-align: middle; }
+        .img-preview { width: 32px; height: 32px; object-fit: cover; border-radius: 4px; border: 1px solid #ddd; }
 
         .action-col { display: flex; flex-direction: column; gap: 2px; }
         .mini-btn { width: 100%; padding: 4px 0; font-size: 10px; margin: 0; border-radius: 4px; line-height: 1.2; }
@@ -37,14 +38,13 @@
         .btn-copy { background: #5cb85c; } 
         .btn-move-tmr { background: #f0ad4e; }
         .btn-del { background: var(--del-color); }
-        .btn-add { width: auto; padding: 5px 10px; font-size: 11px; margin: 4px 0; }
         .btn-save { background: #ff9500; margin-top: 15px; font-size: 15px; height: 45px; }
     </style>
 </head>
 <body>
 
     <div id="loginView" class="card">
-        <h2 style="text-align:center; color:var(--primary-color); margin-top:0;">🏠 作业管理系统 v3.0</h2>
+        <h2 style="text-align:center; color:var(--primary-color); margin-top:0;">🏠 作业管理系统 v3.1</h2>
         <select id="userRole">
             <option value="admin">家长 (管理员)</option>
             <option value="dudu">👦🏼 嘟嘟</option>
@@ -95,7 +95,14 @@
         const client = window.supabase.createClient(SB_URL, SB_KEY);
         const users = {'admin':'admin', 'dudu':'dudu', 'bobo':'bobo'};
         const subjects = ["学而思数学", "乐读数学", "乐读英语", "乐读语文", "校内作业", "集训队", "其他"];
-        
+        const defaultCommonTasks = [
+            {s: "学而思数学", c: "数感小超市"},
+            {s: "乐读数学", c: "乐读小超市"},
+            {s: "乐读英语", c: "单词小超市"},
+            {s: "乐读语文", c: "小花园"},
+            {s: "乐读语文", c: "生字描红本"}
+        ];
+
         let currentRole = '';
         let viewDate = new Date();
         const getStr = (d) => new Intl.DateTimeFormat('zh-CN', {timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit'}).format(d).replace(/\//g, '-');
@@ -120,27 +127,42 @@
 
         async function loadDashboard() {
             const dateStr = getStr(viewDate);
-            document.getElementById('dateTitle').innerText = dateStr;
+            const todayStr = getStr(new Date());
+            const tomorrowStr = getStr(new Date(Date.now() + 864e5));
+            const yesterdayStr = getStr(new Date(Date.now() - 864e5));
+
+            let label = dateStr === todayStr ? " (今日)" : (dateStr === tomorrowStr ? " (明天)" : (dateStr === yesterdayStr ? " (昨天)" : ""));
+            document.getElementById('dateTitle').innerText = dateStr + label;
             document.querySelectorAll('.list-body, #studentBody').forEach(b => b.innerHTML = '');
 
             const { data } = await client.from('HOMEWORK_TASKS').select('*').eq('date_str', dateStr);
             if (currentRole === 'admin') {
                 document.getElementById('adminArea').classList.remove('hidden');
                 document.getElementById('studentArea').classList.add('hidden');
-                data.forEach(d => addRow(d.target_user || 'all', d));
+                const hasCommon = data.some(d => d.target_user === 'all');
+                if (hasCommon) {
+                    data.forEach(d => addRow(d.target_user || 'all', d));
+                } else if (dateStr === todayStr || dateStr === tomorrowStr) {
+                    defaultCommonTasks.forEach(t => addRow('all', {subject:t.s, content:t.c}));
+                    data.filter(d => d.target_user !== 'all').forEach(d => addRow(d.target_user, d));
+                    if (!data.some(d => d.target_user === 'dudu')) addRow('dudu');
+                    if (!data.some(d => d.target_user === 'bobo')) addRow('bobo');
+                } else {
+                    data.forEach(d => addRow(d.target_user || 'all', d));
+                }
             } else {
                 document.getElementById('adminArea').classList.add('hidden');
                 document.getElementById('studentArea').classList.remove('hidden');
-                data.filter(d => d.target_user === 'all' || d.target_user === currentRole).forEach(d => addStaticRow(d));
+                data.filter(d => d.target_user === 'all' || d.target_user === currentRole).forEach(d => addStaticRow(d, dateStr === todayStr));
             }
         }
 
         function addRow(type, data = null) {
             const tbody = document.querySelector(`#tbl-${type} .list-body`);
             const tr = document.createElement('tr');
-            tr.dataset.id = data?.id || ""; // 保存原始ID
-            tr.dataset.image_url = data?.image_url || ""; // 记录已有图片
-            tr.dataset.ai_review = data?.ai_review || ""; // 记录已有评语
+            tr.dataset.id = data?.id || "";
+            tr.dataset.image_url = data?.image_url || "";
+            tr.dataset.ai_review = data?.ai_review || "";
 
             let opts = subjects.map(s => `<option value="${s}" ${(data?.subject === s) ? 'selected' : ''}>${s}</option>`).join('');
             
@@ -156,13 +178,12 @@
                 actionHtml += `<button class="mini-btn btn-move" onclick="moveTask(this, 'dudu')">➡嘟专属</button><button class="mini-btn btn-move" onclick="moveTask(this, 'bobo')">➡啵专属</button>`;
             } else {
                 actionHtml += `<button class="mini-btn btn-copy" onclick="copyToOther(this, '${type==='dudu'?'bobo':'dudu'}')">👯加给${type==='dudu'?'啵':'嘟'}</button>
-                               <button class="mini-btn btn-move-tmr" onclick="moveTaskToNextDay(this, '${type}')">📅移至明天</button>`;
+                               <button class="mini-btn btn-move-tmr" onclick="moveTaskToNextDay(this, '${type}')">📅移后一天</button>`;
             }
             actionHtml += `<button class="mini-btn btn-del" onclick="deleteRow(this)">删除</button></div>`;
 
-            const aiPreview = data?.ai_review ? `<div class="ai-review-box">🤖 AI评语已存</div>` : '';
-
-            tr.innerHTML = `<td><select class="s-in">${opts}</select></td><td><input type="text" class="c-in" value="${data?.content || ''}">${aiPreview}</td><td>${statusHtml}</td><td>${actionHtml}</td>`;
+            const aiBadge = data?.ai_review ? `<div style="font-size:9px;color:orange;">[已存AI评语]</div>` : '';
+            tr.innerHTML = `<td><select class="s-in">${opts}</select></td><td><input type="text" class="c-in" value="${data?.content || ''}">${aiBadge}</td><td>${statusHtml}</td><td>${actionHtml}</td>`;
             tbody.appendChild(tr);
         }
 
@@ -172,6 +193,12 @@
             const tr = btn.closest('tr');
             if (tr.dataset.id) await client.from('HOMEWORK_TASKS').delete().eq('id', tr.dataset.id);
             tr.remove();
+        }
+
+        function copyToOther(el, toWho) {
+            const tr = el.closest('tr');
+            addRow(toWho, {subject: tr.querySelector('.s-in').value, content: tr.querySelector('.c-in').value});
+            doSave(false);
         }
 
         function moveTask(el, toWho) {
@@ -188,7 +215,7 @@
                 date_str: getStr(nextDay), subject: tr.querySelector('.s-in').value, 
                 content: tr.querySelector('.c-in').value, target_user: fromWho
             });
-            alert("已移至明天"); tr.remove(); doSave(false);
+            alert("已移至后一天"); tr.remove(); doSave(false);
         }
 
         async function doSave(needPush = false) {
@@ -198,15 +225,18 @@
 
             ['all', 'dudu', 'bobo'].forEach(type => {
                 const rows = document.querySelectorAll(`#tbl-${type} .list-body tr`);
-                let sectText = "";
+                let sectHasData = false;
+                const titleMap = { 'all': '📋 通用作业', 'dudu': '👦🏼 嘟嘟专属', 'bobo': '👦🏻 啵啵专属' };
+                let sectContent = "";
+
                 rows.forEach(r => {
                     const s = r.querySelector('.s-in').value, c = r.querySelector('.c-in').value;
                     if (c.trim()) {
                         const t = { 
                             date_str: dateStr, subject: s, content: c.trim(), target_user: type,
-                            image_url: r.dataset.image_url, ai_review: r.dataset.ai_review // 关键：保留已有图片和评语
+                            image_url: r.dataset.image_url, ai_review: r.dataset.ai_review 
                         };
-                        if (r.dataset.id) t.id = parseInt(r.dataset.id); // 关键：带上ID触发Upsert
+                        if (r.dataset.id) t.id = parseInt(r.dataset.id);
                         
                         if (type === 'all') {
                             t.dudu_status = r.querySelector('.status-row:nth-child(1) .status-icon').classList.contains('status-active');
@@ -215,33 +245,34 @@
                             t.status = r.querySelector('.status-icon').classList.contains('status-active');
                         }
                         tasks.push(t);
-                        sectText += `☑️ **${s}**: ${c.trim()}\n\n`;
+                        sectContent += `☑️ **${s}**: ${c.trim()}\n\n`;
+                        sectHasData = true;
                     }
                 });
-                if(sectText) pushText += `## ${type==='all'?'📋 通用':(type==='dudu'?'👦🏼 嘟嘟':'👦🏻 啵啵')}\n${sectText}---\n`;
+                if(sectHasData) pushText += `## ${titleMap[type]}\n${sectContent}\n---\n`;
             });
 
-            // 使用 upsert 代替全删全插，防止丢失未在表单中的列
+            // 使用 upsert 确保不丢失 ai_review 字段
             if (tasks.length > 0) await client.from('HOMEWORK_TASKS').upsert(tasks);
             
             if (needPush) {
-                await fetch(`https://sctapi.ftqq.com/${SERVER_CHAN_KEY}.send?title=${encodeURIComponent("🔔 作业提醒")}&desp=${encodeURIComponent(pushText)}`, {mode:'no-cors'});
+                await fetch(`https://sctapi.ftqq.com/${SERVER_CHAN_KEY}.send?title=${encodeURIComponent("🔔 作业提醒: " + dateStr)}&desp=${encodeURIComponent(pushText)}`, {mode:'no-cors'});
                 alert("发布成功！");
                 loadDashboard();
             }
         }
 
-        function addStaticRow(d) {
+        function addStaticRow(d, isToday) {
             const tr = document.createElement('tr');
             const img = d.image_url ? `<img src="${d.image_url}" class="img-preview" onclick="window.open('${d.image_url}')">` : '';
             const myStatus = currentRole === 'dudu' ? (d.target_user==='all'?d.dudu_status:d.status) : (d.target_user==='all'?d.bobo_status:d.status);
-            const aiHtml = d.ai_review ? `<div class="ai-review-box">🤖 AI老师：\n${d.ai_review}</div>` : '';
+            const aiHtml = d.ai_review ? `<div class="ai-review-box">🤖 AI批改：\n${d.ai_review}</div>` : '';
 
             tr.innerHTML = `
                 <td>${d.subject}</td>
                 <td>${d.content}${aiHtml}</td>
                 <td style="text-align:center">${myStatus?'🟢':'⚪'}</td>
-                <td>${img} <button style="width:auto;padding:4px;font-size:10px;background:#5856d6;" onclick="triggerCamera(${d.id})">📸</button>
+                <td>${img} ${isToday?`<button style="width:auto;padding:4px;font-size:10px;background:#5856d6;" onclick="triggerCamera(${d.id})">📸</button>`:''}
                 <input type="file" id="cam-${d.id}" accept="image/*" capture="environment" style="display:none" onchange="handleFileSelect(this, ${d.id})"></td>
             `;
             document.getElementById('studentBody').appendChild(tr);
@@ -258,21 +289,20 @@
                 const { data } = client.storage.from('HOMEWORK_PHOTOS').getPublicUrl(fn);
                 await client.from('HOMEWORK_TASKS').update({ image_url: data.publicUrl }).eq('id', taskId);
                 
-                // 调用云函数进行 AI 批改
+                // 触发优化后的 AI 批改
                 await callQwenAI(data.publicUrl, taskId);
                 loadDashboard();
-            } catch (err) { alert("上传识别失败"); btn.innerText = "📸"; }
+            } catch (err) { alert("识别失败"); btn.innerText = "📸"; }
         }
 
         async function callQwenAI(imageUrl, taskId) {
-            const prompt = `你是一位小学低年级资深特级教师。请严谨分析这张学生作业或试卷图片。
-该图片仅包含以下四种科目之一，请先识别科目，然后按对应规则批改：
+            const prompt = `你是一位小学低年级资深特级教师。请严谨分析这张学生作业或试卷图片。该图片仅包含以下四种科目之一，请先识别科目，然后按对应规则批改：
 1.【数学】：检查计算题对错，明确指出哪道题错误（例如：3+5=9 错误，应为8）。分析应用题逻辑，给出整体评价。
-2.【日记】：识别内容，检查错别字，提供一段150字以内鼓励性评语。
-3.【英语】：检查单词拼写（大小写等）和语法（单复数、时态）。
+2.【日记】：识别内容，检查错别字，提供一段100字以内鼓励性评语。
+3.【英语】：检查单词拼写（大小写等）和语法（单复数、时态）
 4.【语文】：检查汉字拼音规范，判断组词造句合理性，批改阅读理解。
-请以亲切语气返回结果，直接显示批改文字，不涉及的科目不用另作说明或点评`;
-
+请以简短且严厉语气返回批改文字。不涉及的科目请不要点评。`
+            
             try {
                 const { data, error } = await client.functions.invoke('qwen-review', {
                     body: { imageUrl, prompt }
