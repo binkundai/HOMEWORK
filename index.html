@@ -261,40 +261,110 @@
 
         function triggerCamera(id) { document.getElementById(`cam-${id}`).click(); }
 
-        async function handleFileSelect(input, taskId) {
-            const file = input.files[0]; if (!file) return;
-            const btn = input.previousElementSibling; btn.innerText = "⏳";
-            try {
-                const fn = `hw_${taskId}_${Date.now()}.jpg`;
-                await client.storage.from('HOMEWORK_PHOTOS').upload(fn, file);
-                const { data } = client.storage.from('HOMEWORK_PHOTOS').getPublicUrl(fn);
-                await client.from('HOMEWORK_TASKS').update({ image_url: data.publicUrl }).eq('id', taskId);
-                await callQwenAI(data.publicUrl, taskId);
-                loadDashboard();
-            } catch (err) { alert("识别失败"); btn.innerText = "📸"; }
-        }
+// 1. 修改上传逻辑：确保 AI 运行完再刷新，或刷新后能看到状态
+async function handleFileSelect(input, taskId) {
+    const file = input.files[0]; if (!file) return;
+    const btn = input.previousElementSibling; 
+    const originalText = btn.innerText;
+    btn.innerText = "⏳上传中...";
+    
+    try {
+        const fn = `hw_${taskId}_${Date.now()}.jpg`;
+        // 上传图片
+        const { data: uploadData, error: uploadError } = await client.storage.from('HOMEWORK_PHOTOS').upload(fn, file);
+        if (uploadError) throw uploadError;
 
-        async function callQwenAI(imageUrl, taskId) {
-            const url = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation";
-            const prompt = `你是一位小学小低年级资深特级教师。请分析这张学生作业图片：
+        const { data: urlData } = client.storage.from('HOMEWORK_PHOTOS').getPublicUrl(fn);
+        const imageUrl = urlData.publicUrl;
+
+        // 更新图片地址
+        await client.from('HOMEWORK_TASKS').update({ image_url: imageUrl }).eq('id', taskId);
+        
+        btn.innerText = "🤖批改中...";
+        // 关键：必须等待 AI 返回结果
+        await callQwenAI(imageUrl, taskId);
+        
+        btn.innerText = originalText;
+        loadDashboard(); // AI 写入完成后刷新页面
+    } catch (err) { 
+        console.error("处理失败:", err);
+        alert("批改失败: " + (err.message || "未知错误")); 
+        btn.innerText = "❌重试"; 
+    }
+}
+
+// 2. 优化 AI 调用：增加详细日志捕获
+async function callQwenAI(imageUrl, taskId) {
+    const url = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation";
+    const prompt = `你是一位小学小低年级资深特级教师。请分析这张学生作业图片：
     1. 计算题：请检查对错，并告知整体批改结果,并指出哪一题错了。
     2. 日记：识别内容并给出一段 150 字以内的鼓励性评语,并指出不通顺的地方应该如何改进。
     3. 英语：检查单词拼写和语法。
     请以温柔与严厉并存的语气回复，并直接返回批改结果文字。`;
-            try {
-                const response = await fetch(url, {
-                    method: 'POST',
-                    headers: { 'Authorization': `Bearer ${QWEN_KEY}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        model: "qwen-vl-max",
-                        input: { messages: [{ role: "user", content: [{ image: imageUrl }, { text: prompt }] }] }
-                    })
-                });
-                const res = await response.json();
-                const aiText = res.output.choices[0].message.content[0].text;
-                await client.from('HOMEWORK_TASKS').update({ ai_review: aiText }).eq('id', taskId);
-            } catch (err) { console.error("AI服务异常", err); }
+
+    try {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 
+                'Authorization': `Bearer ${QWEN_KEY}`, 
+                'Content-Type': 'application/json',
+                'X-DashScope-SSE': 'disable' // 禁用流式输出，确保直接获取全文
+            },
+            body: JSON.stringify({
+                model: "qwen-vl-max",
+                input: { 
+                    messages: [
+                        { 
+                            role: "user", 
+                            content: [
+                                { image: imageUrl }, 
+                                { text: prompt }
+                            ] 
+                        }
+                    ] 
+                },
+                parameters: {
+                    result_format: "message"
+                }
+            })
+        });
+
+        const res = await response.json();
+        console.log("AI 响应原文:", res); // 在控制台查看是否有报错信息
+
+        if (res.output && res.output.choices && res.output.choices[0]) {
+            const aiText = res.output.choices[0].message.content[0].text;
+            // 更新数据库
+            const { error: updateError } = await client.from('HOMEWORK_TASKS').update({ ai_review: aiText }).eq('id', taskId);
+            if (updateError) throw updateError;
+        } else {
+            throw new Error(res.message || "AI 返回内容为空");
         }
+    } catch (err) { 
+        console.error("AI 服务异常:", err);
+        throw err;
+    }
+}
+
+// 3. 修改展示逻辑：确保换行符能正常显示
+function addStaticRow(d) {
+    const tr = document.createElement('tr');
+    const img = d.image_url ? `<img src="${d.image_url}" class="img-preview" onclick="window.open('${d.image_url}')">` : '';
+    
+    // 增加 white-space: pre-wrap 确保 AI 的换行在网页上生效
+    const aiHtml = d.ai_review ? `<div class="ai-review-box" style="white-space: pre-wrap;">🤖 AI批改结果：\n${d.ai_review}</div>` : '';
+    
+    let myStatus = currentRole === 'dudu' ? (d.target_user==='all'?d.dudu_status:d.status) : (d.target_user==='all'?d.bobo_status:d.status);
+
+    tr.innerHTML = `
+        <td>${d.subject}</td>
+        <td>${d.content}${aiHtml}</td>
+        <td style="text-align:center">${myStatus?'🟢':'⚪'}</td>
+        <td>${img} <button style="width:auto;padding:4px;font-size:10px;background:#5856d6;" onclick="triggerCamera(${d.id})">📸</button>
+        <input type="file" id="cam-${d.id}" accept="image/*" capture="environment" style="display:none" onchange="handleFileSelect(this, ${d.id})"></td>
+    `;
+    document.getElementById('studentBody').appendChild(tr);
+}
     </script>
 </body>
 </html>
