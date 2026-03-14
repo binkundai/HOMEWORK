@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>家庭作业管理系统 v3.1 (AI版)</title>
+    <title>家庭作业管理系统 v3.2 (多用户隔离版)</title>
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <style>
         :root { --primary-color: #4a90e2; --bg-color: #f5f7fa; --dudu-color: #8b572a; --bobo-color: #666; --del-color: #ff3b30; --ai-bg: #fff9f0; --ai-border: #ff9500; }
@@ -28,7 +28,6 @@
         .status-icon { cursor: pointer; filter: grayscale(1); opacity: 0.3; transition: 0.2s; }
         .status-active { filter: grayscale(0); opacity: 1; }
 
-        /* AI 评语样式 */
         .ai-review-box { color: #d35400; font-size: 10px; margin-top: 6px; padding: 6px; background: var(--ai-bg); border-radius: 4px; border-left: 2px solid var(--ai-border); white-space: pre-wrap; line-height: 1.4; }
         .img-preview { width: 32px; height: 32px; object-fit: cover; border-radius: 4px; border: 1px solid #ddd; }
 
@@ -44,7 +43,7 @@
 <body>
 
     <div id="loginView" class="card">
-        <h2 style="text-align:center; color:var(--primary-color); margin-top:0;">🏠 作业管理系统 v3.1</h2>
+        <h2 style="text-align:center; color:var(--primary-color); margin-top:0;">🏠 作业管理系统 v3.2</h2>
         <select id="userRole">
             <option value="admin">家长 (管理员)</option>
             <option value="dudu">👦🏼 嘟嘟</option>
@@ -95,13 +94,7 @@
         const client = window.supabase.createClient(SB_URL, SB_KEY);
         const users = {'admin':'admin', 'dudu':'dudu', 'bobo':'bobo'};
         const subjects = ["学而思数学", "乐读数学", "乐读英语", "乐读语文", "校内作业", "集训队", "其他"];
-        const defaultCommonTasks = [
-            {s: "学而思数学", c: "数感小超市"},
-            {s: "乐读数学", c: "乐读小超市"},
-            {s: "乐读英语", c: "单词小超市"},
-            {s: "乐读语文", c: "小花园"},
-            {s: "乐读语文", c: "生字描红本"}
-        ];
+        const defaultCommonTasks = [{s: "学而思数学", c: "数感小超市"}, {s: "乐读数学", c: "乐读小超市"}, {s: "乐读英语", c: "单词小超市"}, {s: "乐读语文", c: "小花园"}, {s: "乐读语文", c: "生字描红本"}];
 
         let currentRole = '';
         let viewDate = new Date();
@@ -128,10 +121,7 @@
         async function loadDashboard() {
             const dateStr = getStr(viewDate);
             const todayStr = getStr(new Date());
-            const tomorrowStr = getStr(new Date(Date.now() + 864e5));
-            const yesterdayStr = getStr(new Date(Date.now() - 864e5));
-
-            let label = dateStr === todayStr ? " (今日)" : (dateStr === tomorrowStr ? " (明天)" : (dateStr === yesterdayStr ? " (昨天)" : ""));
+            const label = dateStr === todayStr ? " (今日)" : (dateStr === getStr(new Date(Date.now()+864e5)) ? " (明天)" : (dateStr === getStr(new Date(Date.now()-864e5)) ? " (昨天)" : ""));
             document.getElementById('dateTitle').innerText = dateStr + label;
             document.querySelectorAll('.list-body, #studentBody').forEach(b => b.innerHTML = '');
 
@@ -142,17 +132,16 @@
                 const hasCommon = data.some(d => d.target_user === 'all');
                 if (hasCommon) {
                     data.forEach(d => addRow(d.target_user || 'all', d));
-                } else if (dateStr === todayStr || dateStr === tomorrowStr) {
+                } else if (dateStr === todayStr || dateStr === getStr(new Date(Date.now()+864e5))) {
                     defaultCommonTasks.forEach(t => addRow('all', {subject:t.s, content:t.c}));
                     data.filter(d => d.target_user !== 'all').forEach(d => addRow(d.target_user, d));
-                    if (!data.some(d => d.target_user === 'dudu')) addRow('dudu');
-                    if (!data.some(d => d.target_user === 'bobo')) addRow('bobo');
                 } else {
                     data.forEach(d => addRow(d.target_user || 'all', d));
                 }
             } else {
                 document.getElementById('adminArea').classList.add('hidden');
                 document.getElementById('studentArea').classList.remove('hidden');
+                // 学生端显示
                 data.filter(d => d.target_user === 'all' || d.target_user === currentRole).forEach(d => addStaticRow(d, dateStr === todayStr));
             }
         }
@@ -161,11 +150,13 @@
             const tbody = document.querySelector(`#tbl-${type} .list-body`);
             const tr = document.createElement('tr');
             tr.dataset.id = data?.id || "";
-            tr.dataset.image_url = data?.image_url || "";
-            tr.dataset.ai_review = data?.ai_review || "";
+            // 管理员端保留所有原始数据
+            tr.dataset.dudu_img = data?.dudu_img || data?.image_url || ""; 
+            tr.dataset.bobo_img = data?.bobo_img || "";
+            tr.dataset.dudu_review = data?.dudu_review || data?.ai_review || "";
+            tr.dataset.bobo_review = data?.bobo_review || "";
 
             let opts = subjects.map(s => `<option value="${s}" ${(data?.subject === s) ? 'selected' : ''}>${s}</option>`).join('');
-            
             let statusHtml = type === 'all' ? 
                 `<div class="status-col">
                     <div class="status-row"><span>👦🏼</span><span class="status-icon ${data?.dudu_status?'status-active':''}" onclick="toggleQuickStatus(this)">✅</span></div>
@@ -173,71 +164,32 @@
                 </div>` : 
                 `<div class="status-row"><span>${type==='dudu'?'👦🏼':'👦🏻'}</span><span class="status-icon ${data?.status?'status-active':''}" onclick="toggleQuickStatus(this)">✅</span></div>`;
 
-            let actionHtml = `<div class="action-col">`;
-            if (type === 'all') {
-                actionHtml += `<button class="mini-btn btn-move" onclick="moveTask(this, 'dudu')">➡嘟专属</button><button class="mini-btn btn-move" onclick="moveTask(this, 'bobo')">➡啵专属</button>`;
-            } else {
-                actionHtml += `<button class="mini-btn btn-copy" onclick="copyToOther(this, '${type==='dudu'?'bobo':'dudu'}')">👯加给${type==='dudu'?'啵':'嘟'}</button>
-                               <button class="mini-btn btn-move-tmr" onclick="moveTaskToNextDay(this, '${type}')">📅移后一天</button>`;
-            }
-            actionHtml += `<button class="mini-btn btn-del" onclick="deleteRow(this)">删除</button></div>`;
-
-            const aiBadge = data?.ai_review ? `<div style="font-size:9px;color:orange;">[已存AI评语]</div>` : '';
-            tr.innerHTML = `<td><select class="s-in">${opts}</select></td><td><input type="text" class="c-in" value="${data?.content || ''}">${aiBadge}</td><td>${statusHtml}</td><td>${actionHtml}</td>`;
+            tr.innerHTML = `<td><select class="s-in">${opts}</select></td><td><input type="text" class="c-in" value="${data?.content || ''}"></td><td>${statusHtml}</td>
+                <td><div class="action-col"><button class="mini-btn btn-del" onclick="deleteRow(this)">删除</button></div></td>`;
             tbody.appendChild(tr);
         }
 
         function toggleQuickStatus(el) { el.classList.toggle('status-active'); doSave(false); }
-
         async function deleteRow(btn) {
             const tr = btn.closest('tr');
             if (tr.dataset.id) await client.from('HOMEWORK_TASKS').delete().eq('id', tr.dataset.id);
             tr.remove();
         }
 
-        function copyToOther(el, toWho) {
-            const tr = el.closest('tr');
-            addRow(toWho, {subject: tr.querySelector('.s-in').value, content: tr.querySelector('.c-in').value});
-            doSave(false);
-        }
-
-        function moveTask(el, toWho) {
-            const tr = el.closest('tr');
-            addRow(toWho, {subject: tr.querySelector('.s-in').value, content: tr.querySelector('.c-in').value, image_url: tr.dataset.image_url, ai_review: tr.dataset.ai_review});
-            tr.remove();
-            doSave(false);
-        }
-
-        async function moveTaskToNextDay(el, fromWho) {
-            const tr = el.closest('tr');
-            const nextDay = new Date(viewDate); nextDay.setDate(nextDay.getDate() + 1);
-            await client.from('HOMEWORK_TASKS').insert({
-                date_str: getStr(nextDay), subject: tr.querySelector('.s-in').value, 
-                content: tr.querySelector('.c-in').value, target_user: fromWho
-            });
-            alert("已移至后一天"); tr.remove(); doSave(false);
-        }
-
         async function doSave(needPush = false) {
             const dateStr = getStr(viewDate);
             const tasks = [];
-            let pushText = `📅 **日期: ${dateStr}**\n\n`;
-
             ['all', 'dudu', 'bobo'].forEach(type => {
                 const rows = document.querySelectorAll(`#tbl-${type} .list-body tr`);
-                let sectHasData = false;
-                const titleMap = { 'all': '📋 通用作业', 'dudu': '👦🏼 嘟嘟专属', 'bobo': '👦🏻 啵啵专属' };
-                let sectContent = "";
-
                 rows.forEach(r => {
                     const s = r.querySelector('.s-in').value, c = r.querySelector('.c-in').value;
                     if (c.trim()) {
                         const t = { 
                             date_str: dateStr, subject: s, content: c.trim(), target_user: type,
-                            image_url: r.dataset.image_url, ai_review: r.dataset.ai_review 
+                            dudu_img: r.dataset.dudu_img, bobo_img: r.dataset.bobo_img,
+                            dudu_review: r.dataset.dudu_review, bobo_review: r.dataset.bobo_review
                         };
                         if (r.dataset.id) t.id = parseInt(r.dataset.id);
-                        
                         if (type === 'all') {
                             t.dudu_status = r.querySelector('.status-row:nth-child(1) .status-icon').classList.contains('status-active');
                             t.bobo_status = r.querySelector('.status-row:nth-child(2) .status-icon').classList.contains('status-active');
@@ -245,34 +197,28 @@
                             t.status = r.querySelector('.status-icon').classList.contains('status-active');
                         }
                         tasks.push(t);
-                        sectContent += `☑️ **${s}**: ${c.trim()}\n\n`;
-                        sectHasData = true;
                     }
                 });
-                if(sectHasData) pushText += `## ${titleMap[type]}\n${sectContent}\n---\n`;
             });
-
-            // 使用 upsert 确保不丢失 ai_review 字段
             if (tasks.length > 0) await client.from('HOMEWORK_TASKS').upsert(tasks);
-            
-            if (needPush) {
-                await fetch(`https://sctapi.ftqq.com/${SERVER_CHAN_KEY}.send?title=${encodeURIComponent("🔔 作业提醒: " + dateStr)}&desp=${encodeURIComponent(pushText)}`, {mode:'no-cors'});
-                alert("发布成功！");
-                loadDashboard();
-            }
+            if (needPush) alert("发布成功！");
         }
 
         function addStaticRow(d, isToday) {
             const tr = document.createElement('tr');
-            const img = d.image_url ? `<img src="${d.image_url}" class="img-preview" onclick="window.open('${d.image_url}')">` : '';
+            // 关键：根据当前身份，显示对应的图片和评语
+            let displayImg = currentRole === 'dudu' ? (d.dudu_img || d.image_url) : (d.bobo_img);
+            let displayReview = currentRole === 'dudu' ? (d.dudu_review || d.ai_review) : (d.bobo_review);
+            
+            const imgHtml = displayImg ? `<img src="${displayImg}" class="img-preview" onclick="window.open('${displayImg}')">` : '';
             const myStatus = currentRole === 'dudu' ? (d.target_user==='all'?d.dudu_status:d.status) : (d.target_user==='all'?d.bobo_status:d.status);
-            const aiHtml = d.ai_review ? `<div class="ai-review-box">🤖 AI批改：\n${d.ai_review}</div>` : '';
+            const aiHtml = displayReview ? `<div class="ai-review-box">🤖 AI老师：\n${displayReview}</div>` : '';
 
             tr.innerHTML = `
                 <td>${d.subject}</td>
                 <td>${d.content}${aiHtml}</td>
                 <td style="text-align:center">${myStatus?'🟢':'⚪'}</td>
-                <td>${img} ${isToday?`<button style="width:auto;padding:4px;font-size:10px;background:#5856d6;" onclick="triggerCamera(${d.id})">📸</button>`:''}
+                <td>${imgHtml} ${isToday?`<button style="width:auto;padding:4px;font-size:10px;background:#5856d6;" onclick="triggerCamera(${d.id})">📸</button>`:''}
                 <input type="file" id="cam-${d.id}" accept="image/*" capture="environment" style="display:none" onchange="handleFileSelect(this, ${d.id})"></td>
             `;
             document.getElementById('studentBody').appendChild(tr);
@@ -284,33 +230,40 @@
             const file = input.files[0]; if (!file) return;
             const btn = input.previousElementSibling; btn.innerText = "⏳";
             try {
-                const fn = `hw_${taskId}_${Date.now()}.jpg`;
+                const fn = `hw_${taskId}_${currentRole}_${Date.now()}.jpg`;
                 await client.storage.from('HOMEWORK_PHOTOS').upload(fn, file);
                 const { data } = client.storage.from('HOMEWORK_PHOTOS').getPublicUrl(fn);
-                await client.from('HOMEWORK_TASKS').update({ image_url: data.publicUrl }).eq('id', taskId);
+                const publicUrl = data.publicUrl;
+
+                // 准备更新字段
+                const updateObj = {};
+                if (currentRole === 'dudu') updateObj.dudu_img = publicUrl;
+                else updateObj.bobo_img = publicUrl;
+
+                await client.from('HOMEWORK_TASKS').update(updateObj).eq('id', taskId);
                 
-                // 触发优化后的 AI 批改
-                await callQwenAI(data.publicUrl, taskId);
+                // 触发 AI 批改
+                await callQwenAI(publicUrl, taskId);
                 loadDashboard();
             } catch (err) { alert("识别失败"); btn.innerText = "📸"; }
         }
 
         async function callQwenAI(imageUrl, taskId) {
-            const prompt = `你是一位小学低年级资深特级教师。请严谨分析这张学生作业或试卷图片。该图片仅包含以下四种科目之一，请先识别科目，然后按对应规则批改：
-1.【数学】：检查计算题对错，明确指出哪道题计算结果错误（关注计算过程,因为可能是做的标记或草稿）。分析应用题逻辑，给出整体评价。
-2.【日记】：识别内容，检查语句是否通顺以及是否有错别字，提供一段100字以内鼓励性评语。
-3.【英语】：检查单词拼写（大小写等）和语法（单复数、时态）
+            const prompt = `你是一位小学低年级资深特级教师。请严谨分析这张学生作业或试卷图片。
+该图片仅包含以下四种科目之一，请先识别科目，然后按对应规则批改：
+1.【数学】：检查计算题对错，明确指出哪道题计算结果错误。分析应用题逻辑，给出整体评价。
+2.【日记】：识别内容，检查错别字，提供一段150字以内鼓励性评语。
+3.【英语】：检查单词拼写（大小写等）和语法（单复数、时态）。
 4.【语文】：检查汉字拼音规范，判断组词造句合理性，批改阅读理解。
-请以简短且严厉语气返回批改文字。不涉及的科目请不要点评。`
-            
+请以简短且严厉的语气返回结果，直接显示批改文字，不涉及的科目不用点评。`// 同前
             try {
-                const { data, error } = await client.functions.invoke('qwen-review', {
-                    body: { imageUrl, prompt }
-                });
-                if (error) throw error;
+                const { data } = await client.functions.invoke('qwen-review', { body: { imageUrl, prompt } });
                 if (data?.output?.choices) {
                     const aiText = data.output.choices[0].message.content[0].text;
-                    await client.from('HOMEWORK_TASKS').update({ ai_review: aiText }).eq('id', taskId);
+                    const updateObj = {};
+                    if (currentRole === 'dudu') updateObj.dudu_review = aiText;
+                    else updateObj.bobo_review = aiText;
+                    await client.from('HOMEWORK_TASKS').update(updateObj).eq('id', taskId);
                 }
             } catch (err) { console.error("AI服务异常", err); }
         }
