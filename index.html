@@ -256,15 +256,18 @@
             document.getElementById('studentBody').appendChild(tr);
         }
 
-        async function doSave(needPush = false) {
+async function doSave(needPush = false) {
             const dateStr = getStr(viewDate);
             const tasks = [];
-            let pushText = `📅 日期: ${dateStr}\n`;
+            let pushText = `📅 **日期: ${dateStr}**\n\n`; // 加粗显示日期
 
             ['all', 'dudu', 'bobo'].forEach(type => {
                 const rows = document.querySelectorAll(`#tbl-${type} .list-body tr`);
                 let sectHasData = false;
-                let sectHeader = `\n【${type==='all'?'通用':(type==='dudu'?'嘟嘟':'啵啵')}】\n`;
+                
+                // 使用二级标题 ## 来加大加粗分类名称
+                const titleMap = { 'all': '📋 通用作业', 'dudu': '👦🏼 嘟嘟专属', 'bobo': '👦🏻 啵啵专属' };
+                let sectHeader = `## ${titleMap[type]}\n`; 
                 let sectContent = "";
 
                 rows.forEach(r => {
@@ -278,12 +281,13 @@
                             t.status = r.querySelector('.status-icon').classList.contains('status-active');
                         }
                         tasks.push(t);
-                        // 优化推送格式：每个作业占一行，加勾选框
-                        sectContent += `☑️ ${s}: ${c.trim()}\n`;
+                        
+                        // 优化推送格式：强制双换行确保在微信中分行显示，☑️ 后紧跟科目和内容
+                        sectContent += `☑️ **${s}**: ${c.trim()}\n\n`;
                         sectHasData = true;
                     }
                 });
-                if(sectHasData) pushText += sectHeader + sectContent;
+                if(sectHasData) pushText += sectHeader + sectContent + `\n---\n`; // 增加分割线
             });
 
             try {
@@ -291,7 +295,8 @@
                 if (tasks.length > 0) await client.from('HOMEWORK_TASKS').insert(tasks);
                 
                 if (needPush && SERVER_CHAN_KEY.startsWith("SCT")) {
-                    await fetch(`https://sctapi.ftqq.com/${SERVER_CHAN_KEY}.send?title=${encodeURIComponent("今日作业已更新")}&desp=${encodeURIComponent(pushText)}`, {mode:'no-cors'});
+                    // Server酱推送
+                    await fetch(`https://sctapi.ftqq.com/${SERVER_CHAN_KEY}.send?title=${encodeURIComponent("🔔 作业提醒: " + dateStr)}&desp=${encodeURIComponent(pushText)}`, {mode:'no-cors'});
                     alert("发布成功！");
                 }
             } catch (err) { console.error("保存失败", err); }
