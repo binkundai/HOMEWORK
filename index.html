@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>家庭作业管理系统 v2.6</title>
+    <title>家庭作业管理系统 v2.7</title>
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <style>
         :root { --primary-color: #4a90e2; --bg-color: #f5f7fa; --dudu-color: #8b572a; --bobo-color: #666; --del-color: #ff3b30; }
@@ -129,7 +129,7 @@
         }
 
         async function changeDate(days) {
-            // 核心修改：切换日期前自动保存当前页面的修改（不推送微信）
+            // 切换日期前自动保存管理员的任何修改（包括历史状态）
             if (currentRole === 'admin') {
                 await doSave(false);
             }
@@ -138,7 +138,6 @@
             const today = new Date();
             const tomorrow = new Date(today.getTime() + 864e5);
             
-            // 限制只能看到明天
             if (viewDate > tomorrow && getStr(viewDate) !== getStr(tomorrow)) {
                 viewDate.setDate(viewDate.getDate() - days);
                 return;
@@ -218,7 +217,7 @@
 
         function toggleQuickStatus(el) {
             el.classList.toggle('status-active');
-            // 点击勾选时，实时静默保存一次
+            // 无论日期，只要管理员勾选，立即执行同步保存
             doSave(false); 
         }
 
@@ -255,7 +254,15 @@
             const tr = document.createElement('tr');
             const img = d.image_url ? `<img src="${d.image_url}" class="img-preview" onclick="window.open('${d.image_url}')">` : '';
             const btn = isToday ? `<button style="width:auto;padding:4px;font-size:10px;background:#5856d6;" onclick="triggerCamera(${d.id})">📸拍照</button>` : '';
-            const myStatus = currentRole === 'dudu' ? d.dudu_status : (currentRole === 'bobo' ? d.bobo_status : d.status);
+            
+            // 关键：学生端根据身份准确显示状态
+            let myStatus = false;
+            if (currentRole === 'dudu') {
+                myStatus = d.target_user === 'all' ? d.dudu_status : d.status;
+            } else if (currentRole === 'bobo') {
+                myStatus = d.target_user === 'all' ? d.bobo_status : d.status;
+            }
+
             tr.innerHTML = `<td>${d.subject}</td><td>${d.content}</td><td style="text-align:center">${myStatus?'🟢':'⚪'}</td><td>${img}${btn}<input type="file" id="cam-${d.id}" accept="image/*" capture="environment" style="display:none" onchange="handleFileSelect(this, ${d.id})"></td>`;
             document.getElementById('studentBody').appendChild(tr);
         }
@@ -291,7 +298,7 @@
             });
 
             try {
-                // 执行覆盖保存
+                // 覆盖保存逻辑：先删后增，确保所有状态（包括历史日期）同步至数据库
                 await client.from('HOMEWORK_TASKS').delete().eq('date_str', dateStr);
                 if (tasks.length > 0) {
                     await client.from('HOMEWORK_TASKS').insert(tasks);
