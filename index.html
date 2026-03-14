@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>家庭作业管理系统 v2.5</title>
+    <title>家庭作业管理系统 v2.6</title>
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <style>
         :root { --primary-color: #4a90e2; --bg-color: #f5f7fa; --dudu-color: #8b572a; --bobo-color: #666; --del-color: #ff3b30; }
@@ -96,7 +96,6 @@
     </div>
 
     <script>
-        // 初始化 Supabase
         const SB_URL = "https://mupjybbafixsmdlsqxxq.supabase.co";
         const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im11cGp5YmJhZml4c21kbHNxeHhxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwMzUwMTcsImV4cCI6MjA4ODYxMTAxN30.bfNvl_e30pv8EVNeMcJj7O60p96ltp96J2abm2YT7hA"; 
         const SERVER_CHAN_KEY = "SCT135651TZHh6tUlVaovebckiayAAfcuw";
@@ -130,10 +129,15 @@
         }
 
         async function changeDate(days) {
-            if (currentRole === 'admin') await doSave(false);
+            // 核心修改：切换日期前自动保存当前页面的修改（不推送微信）
+            if (currentRole === 'admin') {
+                await doSave(false);
+            }
+            
             viewDate.setDate(viewDate.getDate() + days);
             const today = new Date();
             const tomorrow = new Date(today.getTime() + 864e5);
+            
             // 限制只能看到明天
             if (viewDate > tomorrow && getStr(viewDate) !== getStr(tomorrow)) {
                 viewDate.setDate(viewDate.getDate() - days);
@@ -214,6 +218,7 @@
 
         function toggleQuickStatus(el) {
             el.classList.toggle('status-active');
+            // 点击勾选时，实时静默保存一次
             doSave(false); 
         }
 
@@ -233,7 +238,6 @@
             doSave(false); 
         }
 
-        // 核心修复：移至当前日期+1天
         async function moveTaskToNextDay(el, fromWho) {
             const tr = el.closest('tr');
             const sub = tr.querySelector('.s-in').value, con = tr.querySelector('.c-in').value;
@@ -256,16 +260,14 @@
             document.getElementById('studentBody').appendChild(tr);
         }
 
-async function doSave(needPush = false) {
+        async function doSave(needPush = false) {
             const dateStr = getStr(viewDate);
             const tasks = [];
-            let pushText = `📅 **日期: ${dateStr}**\n\n`; // 加粗显示日期
+            let pushText = `📅 **日期: ${dateStr}**\n\n`;
 
             ['all', 'dudu', 'bobo'].forEach(type => {
                 const rows = document.querySelectorAll(`#tbl-${type} .list-body tr`);
                 let sectHasData = false;
-                
-                // 使用二级标题 ## 来加大加粗分类名称
                 const titleMap = { 'all': '📋 通用作业', 'dudu': '👦🏼 嘟嘟专属', 'bobo': '👦🏻 啵啵专属' };
                 let sectHeader = `## ${titleMap[type]}\n`; 
                 let sectContent = "";
@@ -281,21 +283,21 @@ async function doSave(needPush = false) {
                             t.status = r.querySelector('.status-icon').classList.contains('status-active');
                         }
                         tasks.push(t);
-                        
-                        // 优化推送格式：强制双换行确保在微信中分行显示，☑️ 后紧跟科目和内容
                         sectContent += `☑️ **${s}**: ${c.trim()}\n\n`;
                         sectHasData = true;
                     }
                 });
-                if(sectHasData) pushText += sectHeader + sectContent + `\n---\n`; // 增加分割线
+                if(sectHasData) pushText += sectHeader + sectContent + `\n---\n`;
             });
 
             try {
+                // 执行覆盖保存
                 await client.from('HOMEWORK_TASKS').delete().eq('date_str', dateStr);
-                if (tasks.length > 0) await client.from('HOMEWORK_TASKS').insert(tasks);
+                if (tasks.length > 0) {
+                    await client.from('HOMEWORK_TASKS').insert(tasks);
+                }
                 
                 if (needPush && SERVER_CHAN_KEY.startsWith("SCT")) {
-                    // Server酱推送
                     await fetch(`https://sctapi.ftqq.com/${SERVER_CHAN_KEY}.send?title=${encodeURIComponent("🔔 作业提醒: " + dateStr)}&desp=${encodeURIComponent(pushText)}`, {mode:'no-cors'});
                     alert("发布成功！");
                 }
