@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>家庭作业管理系统 v3.2 (多用户隔离版)</title>
+    <title>家庭作业管理系统 v3.3</title>
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <style>
         :root { --primary-color: #4a90e2; --bg-color: #f5f7fa; --dudu-color: #8b572a; --bobo-color: #666; --del-color: #ff3b30; --ai-bg: #fff9f0; --ai-border: #ff9500; }
@@ -12,7 +12,6 @@
         .hidden { display: none !important; }
         input, select, button { width: 100%; padding: 10px; margin: 4px 0; border-radius: 6px; border: 1px solid #ddd; font-size: 14px; box-sizing: border-box; }
         button { background: var(--primary-color); color: white; border: none; font-weight: bold; cursor: pointer; }
-        button:disabled { background: #ccc !important; cursor: not-allowed; }
         
         .date-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
         .nav-btn { width: 35px; background: none; color: var(--primary-color); font-size: 18px; padding: 0; }
@@ -33,8 +32,6 @@
 
         .action-col { display: flex; flex-direction: column; gap: 2px; }
         .mini-btn { width: 100%; padding: 4px 0; font-size: 10px; margin: 0; border-radius: 4px; line-height: 1.2; }
-        .btn-move { background: #5bc0de; }
-        .btn-copy { background: #5cb85c; } 
         .btn-move-tmr { background: #f0ad4e; }
         .btn-del { background: var(--del-color); }
         .btn-save { background: #ff9500; margin-top: 15px; font-size: 15px; height: 45px; }
@@ -43,7 +40,7 @@
 <body>
 
     <div id="loginView" class="card">
-        <h2 style="text-align:center; color:var(--primary-color); margin-top:0;">🏠 作业管理系统 v3.2</h2>
+        <h2 style="text-align:center; color:var(--primary-color); margin-top:0;">🏠 作业管理系统 v3.3</h2>
         <select id="userRole">
             <option value="admin">家长 (管理员)</option>
             <option value="dudu">👦🏼 嘟嘟</option>
@@ -55,9 +52,9 @@
 
     <div id="appView" class="card hidden">
         <div class="date-nav">
-            <button class="nav-btn" onclick="changeDate(-1)">⬅️</button>
+            <button class="nav-btn" id="prevDay" onclick="changeDate(-1)">⬅️</button>
             <h2 id="dateTitle">加载中...</h2>
-            <button class="nav-btn" onclick="changeDate(1)">➡️</button>
+            <button class="nav-btn" id="nextDay" onclick="changeDate(1)">➡️</button>
         </div>
         
         <p style="font-size:11px; color:#666; text-align:center; margin-bottom:12px;">用户: <span id="userDisplay" style="font-weight:bold"></span> | <a href="javascript:location.reload()">退出</a></p>
@@ -121,7 +118,16 @@
         async function loadDashboard() {
             const dateStr = getStr(viewDate);
             const todayStr = getStr(new Date());
-            const label = dateStr === todayStr ? " (今日)" : (dateStr === getStr(new Date(Date.now()+864e5)) ? " (明天)" : (dateStr === getStr(new Date(Date.now()-864e5)) ? " (昨天)" : ""));
+            const tomorrowStr = getStr(new Date(Date.now() + 864e5));
+            const yesterdayStr = getStr(new Date(Date.now() - 864e5));
+
+            // 日期限制逻辑
+            if (currentRole !== 'admin') {
+                document.getElementById('prevDay').disabled = (dateStr === yesterdayStr);
+                document.getElementById('nextDay').disabled = (dateStr === tomorrowStr);
+            }
+
+            let label = dateStr === todayStr ? " (今日)" : (dateStr === tomorrowStr ? " (明天)" : (dateStr === yesterdayStr ? " (昨天)" : ""));
             document.getElementById('dateTitle').innerText = dateStr + label;
             document.querySelectorAll('.list-body, #studentBody').forEach(b => b.innerHTML = '');
 
@@ -129,19 +135,14 @@
             if (currentRole === 'admin') {
                 document.getElementById('adminArea').classList.remove('hidden');
                 document.getElementById('studentArea').classList.add('hidden');
-                const hasCommon = data.some(d => d.target_user === 'all');
-                if (hasCommon) {
-                    data.forEach(d => addRow(d.target_user || 'all', d));
-                } else if (dateStr === todayStr || dateStr === getStr(new Date(Date.now()+864e5))) {
+                if (data.length === 0 && (dateStr === todayStr || dateStr === tomorrowStr)) {
                     defaultCommonTasks.forEach(t => addRow('all', {subject:t.s, content:t.c}));
-                    data.filter(d => d.target_user !== 'all').forEach(d => addRow(d.target_user, d));
                 } else {
                     data.forEach(d => addRow(d.target_user || 'all', d));
                 }
             } else {
                 document.getElementById('adminArea').classList.add('hidden');
                 document.getElementById('studentArea').classList.remove('hidden');
-                // 学生端显示
                 data.filter(d => d.target_user === 'all' || d.target_user === currentRole).forEach(d => addStaticRow(d, dateStr === todayStr));
             }
         }
@@ -150,7 +151,6 @@
             const tbody = document.querySelector(`#tbl-${type} .list-body`);
             const tr = document.createElement('tr');
             tr.dataset.id = data?.id || "";
-            // 管理员端保留所有原始数据
             tr.dataset.dudu_img = data?.dudu_img || data?.image_url || ""; 
             tr.dataset.bobo_img = data?.bobo_img || "";
             tr.dataset.dudu_review = data?.dudu_review || data?.ai_review || "";
@@ -164,8 +164,12 @@
                 </div>` : 
                 `<div class="status-row"><span>${type==='dudu'?'👦🏼':'👦🏻'}</span><span class="status-icon ${data?.status?'status-active':''}" onclick="toggleQuickStatus(this)">✅</span></div>`;
 
-            tr.innerHTML = `<td><select class="s-in">${opts}</select></td><td><input type="text" class="c-in" value="${data?.content || ''}"></td><td>${statusHtml}</td>
-                <td><div class="action-col"><button class="mini-btn btn-del" onclick="deleteRow(this)">删除</button></div></td>`;
+            let actionHtml = `<div class="action-col">
+                <button class="mini-btn btn-move-tmr" onclick="moveTaskToNextDay(this, '${type}')">📅移后</button>
+                <button class="mini-btn btn-del" onclick="deleteRow(this)">删除</button>
+            </div>`;
+
+            tr.innerHTML = `<td><select class="s-in">${opts}</select></td><td><input type="text" class="c-in" value="${data?.content || ''}"></td><td>${statusHtml}</td><td>${actionHtml}</td>`;
             tbody.appendChild(tr);
         }
 
@@ -174,6 +178,16 @@
             const tr = btn.closest('tr');
             if (tr.dataset.id) await client.from('HOMEWORK_TASKS').delete().eq('id', tr.dataset.id);
             tr.remove();
+        }
+
+        async function moveTaskToNextDay(el, fromWho) {
+            const tr = el.closest('tr');
+            const nextDay = new Date(viewDate); nextDay.setDate(nextDay.getDate() + 1);
+            await client.from('HOMEWORK_TASKS').insert({
+                date_str: getStr(nextDay), subject: tr.querySelector('.s-in').value, 
+                content: tr.querySelector('.c-in').value, target_user: fromWho
+            });
+            alert("已移至后一天"); tr.remove(); doSave(false);
         }
 
         async function doSave(needPush = false) {
@@ -206,7 +220,6 @@
 
         function addStaticRow(d, isToday) {
             const tr = document.createElement('tr');
-            // 关键：根据当前身份，显示对应的图片和评语
             let displayImg = currentRole === 'dudu' ? (d.dudu_img || d.image_url) : (d.bobo_img);
             let displayReview = currentRole === 'dudu' ? (d.dudu_review || d.ai_review) : (d.bobo_review);
             
@@ -235,14 +248,11 @@
                 const { data } = client.storage.from('HOMEWORK_PHOTOS').getPublicUrl(fn);
                 const publicUrl = data.publicUrl;
 
-                // 准备更新字段
                 const updateObj = {};
                 if (currentRole === 'dudu') updateObj.dudu_img = publicUrl;
                 else updateObj.bobo_img = publicUrl;
 
                 await client.from('HOMEWORK_TASKS').update(updateObj).eq('id', taskId);
-                
-                // 触发 AI 批改
                 await callQwenAI(publicUrl, taskId);
                 loadDashboard();
             } catch (err) { alert("识别失败"); btn.innerText = "📸"; }
@@ -250,12 +260,13 @@
 
         async function callQwenAI(imageUrl, taskId) {
             const prompt = `你是一位小学低年级资深特级教师。请严谨分析这张学生作业或试卷图片。
-该图片仅包含以下四种科目之一，请先识别科目，然后按对应规则批改：
+该图片仅包含以下四种科目之一，请先识别科目，然后理解每道题目的要求做出批改：
 1.【数学】：检查计算题对错，明确指出哪道题计算结果错误。分析应用题逻辑，给出整体评价。
 2.【日记】：识别内容，检查错别字，提供一段150字以内鼓励性评语。
 3.【英语】：检查单词拼写（大小写等）和语法（单复数、时态）。
 4.【语文】：检查汉字拼音规范，判断组词造句合理性，批改阅读理解。
-请以简短且严厉的语气返回结果，直接显示批改文字，不涉及的科目不用点评。`// 同前
+请以简短且鼓励的语气返回结果，直接显示批改文字，不涉及的科目不用点评。`;
+
             try {
                 const { data } = await client.functions.invoke('qwen-review', { body: { imageUrl, prompt } });
                 if (data?.output?.choices) {
