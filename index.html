@@ -300,27 +300,28 @@ async function callQwenAI(imageUrl, taskId) {
 
         if (error) throw error;
 
-        // 核心检查：确保云函数返回了有效的 text
-        if (data && data.output && data.output.choices && data.output.choices[0].message.content[0].text) {
+        // 获取 AI 生成的文本内容
+        if (data && data.output && data.output.choices) {
             const aiText = data.output.choices[0].message.content[0].text;
-            
-            // 写入数据库
+            console.log("准备写入 AI 结果:", aiText);
+
+            // 核心修复：显式更新 ai_review 字段，并确保 taskId 是数字
             const { error: patchError } = await client
                 .from('HOMEWORK_TASKS')
                 .update({ ai_review: aiText })
-                .eq('id', taskId);
+                .eq('id', Number(taskId)); // 强制转为数字，防止格式不匹配
 
             if (patchError) {
-                console.error("写入数据库失败:", patchError);
-                // 常见的 400 错误可能是列不存在，请确认表里确实有 ai_review 这一列
-                alert("AI 批改完成，但保存失败。请确认数据库表是否有 ai_review 列。");
+                console.error("写入数据库失败，详情:", patchError);
+                // 如果还报错 400，极大可能是因为表里没有 ai_review 这一列
+                alert(`保存失败: ${patchError.message}\n请检查数据库是否有 ai_review 列`);
             } else {
-                console.log("批改结果保存成功");
-                loadDashboard(); // 刷新界面显示结果
+                console.log("AI 批改保存成功！");
+                if (typeof loadDashboard === 'function') loadDashboard();
             }
         }
     } catch (err) {
-        console.error("调用过程出错:", err);
+        console.error("流程执行异常:", err);
     }
 }
     </script>
