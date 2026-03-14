@@ -105,11 +105,11 @@
         const subjects = ["学而思数学", "乐读数学", "乐读英语", "乐读语文", "校内作业", "集训队", "其他"];
         
         const defaultCommonTasks = [
-            {s: "学而思数学", c: "数感小超市 每天1页"},
-            {s: "乐读数学", c: "乐读小超市 每天1页"},
-            {s: "乐读英语", c: "单词小超市 每天1页"},
-            {s: "乐读语文", c: "小花园 每天1页"},
-            {s: "乐读语文", c: "生字描红本 每天1页"}
+            {s: "学而思数学", c: "数感小超市"},
+            {s: "乐读数学", c: "乐读小超市"},
+            {s: "乐读英语", c: "单词小超市"},
+            {s: "乐读语文", c: "小花园"},
+            {s: "乐读语文", c: "生字描红本"}
         ];
 
         let currentRole = '';
@@ -208,7 +208,7 @@
             } else {
                 const targetName = type === 'dudu' ? '啵啵' : '嘟嘟';
                 const targetKey = type === 'dudu' ? 'bobo' : 'dudu';
-                actionHtml += `<button class="mini-btn btn-copy" onclick="copyToOther(this, '${targetKey}')">👯复制给${targetName}</button>`;
+                actionHtml += `<button class="mini-btn btn-copy" onclick="copyToOther(this, '${targetKey}')">👯加给${targetName}</button>`;
                 actionHtml += `<button class="mini-btn btn-move-tmr" onclick="moveTaskToTomorrow(this, '${type}')">📅移至明天</button>`;
             }
             actionHtml += `<button class="mini-btn btn-del" onclick="this.closest('tr').remove()">删除</button></div>`;
