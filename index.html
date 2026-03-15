@@ -129,16 +129,29 @@
             } catch (err) { alert("上传失败"); }
         }
 
-        async function callGeminiAI(imageUrl, taskId) {
-            const prompt = "你是一位特级教师，请批改这张作业图。";
-            const { data, error } = await client.functions.invoke('gemini-review', { 
-                body: { imageUrl, prompt } 
-            });
-            if (data && data.text) {
-                const updateObj = currentRole === 'dudu' ? { dudu_review: data.text } : { bobo_review: data.text };
-                await client.from('HOMEWORK_TASKS').update(updateObj).eq('id', taskId);
-            }
+async function callGeminiAI(imageUrl, taskId) {
+    try {
+        const response = await client.functions.invoke('gemini-review', { 
+            body: { imageUrl, prompt: "你是一位 有20年教学经验的小学低年级特级教师（1-3年级），擅长批改学生作业并给出鼓励性的教学反馈。请分析我上传的 学生作业或试卷图片，并按以下步骤完成：第一步：识别科目
+该图片只可能属于以下四种科目之一，不会出现跨科目情况：数学,语文,英语,日记.请先判断属于哪一类，再进行批改。" } 
+        });
+
+        // 检查返回数据结构
+        if (response.data && (response.data.text || response.data.error)) {
+            const aiText = response.data.error ? response.data.text : response.data.text;
+            
+            const updateObj = currentRole === 'dudu' ? { dudu_review: aiText } : { bobo_review: aiText };
+            await client.from('HOMEWORK_TASKS').update(updateObj).eq('id', taskId);
+            
+            loadDashboard(); // 确保数据库字段已补齐，否则这里也会报错
+        } else {
+            console.error("响应格式异常:", response);
         }
+    } catch (err) { 
+        console.error("无法解析 AI 响应:", err);
+        alert("批改出现问题，请查看控制台日志");
+    }
+}
         
         function triggerCamera(id) { document.getElementById(`cam-${id}`).click(); }
         function changeDate(n) { viewDate.setDate(viewDate.getDate() + n); loadDashboard(); }
