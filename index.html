@@ -3,34 +3,51 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>家庭作业管理系统 v3.4 (Gemini Pro)</title>
+    <title>家庭作业管理系统 v3.4</title>
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <style>
-        :root { --primary-color: #4a90e2; --bg-color: #f5f7fa; --dudu-color: #8b572a; --bobo-color: #666; --del-color: #ff3b30; --ai-bg: #f0f7ff; --ai-border: #4a90e2; }
-        body { font-family: -apple-system, sans-serif; background: var(--bg-color); padding: 5px; margin: 0; }
+        :root { --primary-color: #4a90e2; --bg-color: #f5f7fa; --dudu-color: #8b572a; --bobo-color: #666; --del-color: #ff3b30; }
+        body { font-family: -apple-system, sans-serif; background: var(--bg-color); padding: 5px; margin: 0; color: #333; }
         .card { background: white; padding: 10px; border-radius: 8px; box-shadow: 0 1px 5px rgba(0,0,0,0.05); margin-bottom: 10px; }
         .hidden { display: none !important; }
         input, select, button { width: 100%; padding: 10px; margin: 4px 0; border-radius: 6px; border: 1px solid #ddd; font-size: 14px; box-sizing: border-box; }
         button { background: var(--primary-color); color: white; border: none; font-weight: bold; cursor: pointer; }
+        button:disabled { background: #ccc !important; cursor: not-allowed; }
+        
         .date-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-        .nav-btn { width: 40px; background: none; color: var(--primary-color); font-size: 20px; }
+        .nav-btn { width: 35px; background: none; color: var(--primary-color); font-size: 18px; padding: 0; }
         h2#dateTitle { margin: 0; font-size: 0.95rem; font-weight: bold; }
-        table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-        td, th { border: 1px solid #eee; padding: 6px 3px; font-size: 11px; }
-        .ai-review-box { color: #2c3e50; font-size: 10px; margin-top: 6px; padding: 8px; background: var(--ai-bg); border-radius: 6px; border-left: 3px solid var(--ai-border); white-space: pre-wrap; line-height: 1.5; }
-        .img-preview { width: 36px; height: 36px; object-fit: cover; border-radius: 4px; border: 1px solid #ddd; }
-        .status-icon { cursor: pointer; filter: grayscale(1); opacity: 0.3; }
+
+        h3 { margin: 12px 0 4px 0; font-size: 0.9rem; border-left: 3px solid var(--primary-color); padding-left: 6px; }
+        table { width: 100%; border-collapse: collapse; table-layout: fixed; margin-bottom: 8px; }
+        td, th { border: 1px solid #eee; padding: 5px 3px; font-size: 11px; text-align: left; }
+        th { background: #fafafa; }
+        
+        .status-col { display: flex; flex-direction: column; gap: 4px; align-items: center; }
+        .status-row { display: flex; align-items: center; gap: 4px; justify-content: center; font-size: 16px; }
+        .status-icon { cursor: pointer; filter: grayscale(1); opacity: 0.3; transition: 0.2s; }
         .status-active { filter: grayscale(0); opacity: 1; }
+
+        .action-col { display: flex; flex-direction: column; gap: 2px; }
+        .mini-btn { width: 100%; padding: 4px 0; font-size: 10px; margin: 0; border-radius: 4px; line-height: 1.2; }
+        .btn-move { background: #5bc0de; }
+        .btn-copy { background: #5cb85c; } 
+        .btn-move-tmr { background: #f0ad4e; }
+        .btn-del { background: var(--del-color); }
+
+        .btn-add { width: auto; padding: 5px 10px; font-size: 11px; margin: 4px 0; }
+        .btn-save { background: #ff9500; margin-top: 15px; font-size: 15px; height: 45px; }
+        .img-preview { width: 28px; height: 28px; object-fit: cover; border-radius: 4px; }
     </style>
 </head>
 <body>
 
     <div id="loginView" class="card">
-        <h2 style="text-align:center; color:var(--primary-color);">🏠 作业管理 v3.4</h2>
+        <h2 style="text-align:center; color:var(--primary-color); margin-top:0;">🏠 作业管理系统</h2>
         <select id="userRole">
             <option value="admin">家长 (管理员)</option>
-            <option value="dudu">👦🏼 嘟嘟</option>
-            <option value="bobo">👦🏻 啵啵</option>
+            <option value="dudu">嘟嘟</option>
+            <option value="bobo">啵啵</option>
         </select>
         <input type="password" id="password" placeholder="访问密码">
         <button onclick="doLogin()">登 录</button>
@@ -43,15 +60,35 @@
             <button class="nav-btn" onclick="changeDate(1)">➡️</button>
         </div>
         
+        <p style="font-size:11px; color:#666; text-align:center; margin-bottom:12px;">用户: <span id="userDisplay" style="font-weight:bold"></span> | <a href="javascript:location.reload()">退出</a></p>
+        
         <div id="adminArea" class="hidden">
-            <h3 style="color:#e67e22;">📋 通用作业</h3>
-            <table id="tbl-all"><tbody class="list-body"></tbody></table>
-            <button onclick="addRow('all')">+ 增加通用项</button>
-            <button class="btn-save" style="background:#ff9500; margin-top:10px;" onclick="doSave(true)">🚀 保存并推送微信</button>
+            <h3 style="border-color:#ff9500;color:#e67e22">📋 1. 通用作业</h3>
+            <table id="tbl-all">
+                <thead><tr><th width="32%">科目</th><th width="32%">内容</th><th width="18%">状态</th><th width="18%">操作</th></tr></thead>
+                <tbody class="list-body"></tbody>
+            </table>
+            <button class="btn-add" onclick="addRow('all')">+ 增加通用项</button>
+
+            <h3 style="border-color:var(--dudu-color);color:var(--dudu-color)">👦🏼 2. 嘟嘟专属</h3>
+            <table id="tbl-dudu">
+                <thead><tr><th width="32%">科目</th><th width="32%">内容</th><th width="18%">状态</th><th width="18%">操作</th></tr></thead>
+                <tbody class="list-body"></tbody>
+            </table>
+            <button class="btn-add" style="background:var(--dudu-color)" onclick="addRow('dudu')">+ 增加专属</button>
+
+            <h3 style="border-color:#999;color:#666">👦🏻 3. 啵啵专属</h3>
+            <table id="tbl-bobo">
+                <thead><tr><th width="32%">科目</th><th width="32%">内容</th><th width="18%">状态</th><th width="18%">操作</th></tr></thead>
+                <tbody class="list-body"></tbody>
+            </table>
+            <button class="btn-add" style="background:#b5b5b5" onclick="addRow('bobo')">+ 增加专属</button>
+
+            <button id="saveBtn" class="btn-save" onclick="doSave(true)">🚀 发布今日作业并推送微信</button>
         </div>
 
         <div id="studentArea" class="hidden">
-            <table>
+            <table id="tbl-student">
                 <thead><tr><th width="28%">科目</th><th width="42%">内容</th><th width="15%">状态</th><th width="15%">拍照</th></tr></thead>
                 <tbody id="studentBody"></tbody>
             </table>
@@ -61,56 +98,161 @@
     <script>
         const SB_URL = "https://mupjybbafixsmdlsqxxq.supabase.co";
         const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im11cGp5YmJhZml4c21kbHNxeHhxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwMzUwMTcsImV4cCI6MjA4ODYxMTAxN30.bfNvl_e30pv8EVNeMcJj7O60p96ltp96J2abm2YT7hA"; 
+        const SERVER_CHAN_KEY = "SCT135651TZHh6tUlVaovebckiayAAfcuw";
+
         const client = window.supabase.createClient(SB_URL, SB_KEY);
+        const users = {'admin':'admin', 'dudu':'dudu', 'bobo':'bobo'};
+        const subjects = ["学而思数学", "乐读数学", "乐读英语", "乐读语文", "校内作业", "集训队", "其他"];
+        
+        const defaultCommonTasks = [
+            {s: "学而思数学", c: "数感小超市"},
+            {s: "乐读数学", c: "乐读小超市"},
+            {s: "乐读英语", c: "单词小超市"},
+            {s: "乐读语文", c: "小花园"},
+            {s: "乐读语文", c: "生字描红本"}
+        ];
 
         let currentRole = '';
         let viewDate = new Date();
         const getStr = (d) => new Intl.DateTimeFormat('zh-CN', {timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit'}).format(d).replace(/\//g, '-');
 
         function doLogin() {
-            if (document.getElementById('password').value === users[document.getElementById('userRole').value]) {
-                currentRole = document.getElementById('userRole').value;
+            const role = document.getElementById('userRole').value;
+            const pass = document.getElementById('password').value;
+            if (users[role] === pass) {
+                currentRole = role;
+                document.getElementById('userDisplay').innerText = role==='admin'?'家长':(role==='dudu'?'👦🏼嘟嘟':'👦🏻啵啵');
                 document.getElementById('loginView').classList.add('hidden');
                 document.getElementById('appView').classList.remove('hidden');
                 loadDashboard();
             } else alert("密码错误");
         }
-        const users = {'admin':'admin', 'dudu':'dudu', 'bobo':'bobo'};
 
-        async function loadDashboard() {
-            const dateStr = getStr(viewDate);
-            document.getElementById('dateTitle').innerText = dateStr;
-            const { data } = await client.from('HOMEWORK_TASKS').select('*').eq('date_str', dateStr);
-            
+        async function changeDate(days) {
+            // 切换日期前自动保存管理员的任何修改（包括历史状态）
             if (currentRole === 'admin') {
-                document.getElementById('adminArea').classList.remove('hidden');
-                document.getElementById('studentArea').classList.add('hidden');
-                // ...此处省略 addRow 调用，逻辑同前...
-            } else {
-                document.getElementById('adminArea').classList.add('hidden');
-                document.getElementById('studentArea').classList.remove('hidden');
-                const tbody = document.getElementById('studentBody');
-                tbody.innerHTML = '';
-                data.filter(d => d.target_user === 'all' || d.target_user === currentRole).forEach(d => {
-                    const tr = document.createElement('tr');
-                    const imgUrl = currentRole === 'dudu' ? (d.dudu_img || d.image_url) : d.bobo_img;
-                    const review = currentRole === 'dudu' ? (d.dudu_review || d.ai_review) : d.bobo_review;
-                    const status = currentRole === 'dudu' ? (d.target_user==='all'?d.dudu_status:d.status) : (d.target_user==='all'?d.bobo_status:d.status);
-                    
-                    tr.innerHTML = `
-                        <td>${d.subject}</td>
-                        <td>${d.content} ${review ? `<div class="ai-review-box">🤖 ${review}</div>` : ''}</td>
-                        <td style="text-align:center">${status ? '🟢' : '⚪'}</td>
-                        <td>
-                            ${imgUrl ? `<img src="${imgUrl}" class="img-preview" onclick="window.open('${imgUrl}')">` : ''}
-                            <button style="width:auto;padding:2px 5px;" onclick="triggerCamera(${d.id})">📸</button>
-                            <input type="file" id="cam-${d.id}" accept="image/*" capture="environment" style="display:none" onchange="handleFileSelect(this, ${d.id})">
-                        </td>
-                    `;
-                    tbody.appendChild(tr);
-                });
+                await doSave(false);
             }
+            
+            viewDate.setDate(viewDate.getDate() + days);
+            const today = new Date();
+            const tomorrow = new Date(today.getTime() + 864e5);
+            
+            if (viewDate > tomorrow && getStr(viewDate) !== getStr(tomorrow)) {
+                viewDate.setDate(viewDate.getDate() - days);
+                return;
+            }
+            loadDashboard();
         }
+
+async function loadDashboard() {
+    const dateStr = getStr(viewDate);
+    const todayStr = getStr(new Date());
+    const tomorrowStr = getStr(new Date(Date.now() + 864e5));
+    const yesterdayStr = getStr(new Date(Date.now() - 864e5));
+
+    // 1. 保留版本一的日期标签逻辑
+    let label = dateStr === todayStr ? " (今日)" : (dateStr === tomorrowStr ? " (明天)" : (dateStr === yesterdayStr ? " (昨天)" : ""));
+    document.getElementById('dateTitle').innerText = dateStr + label;
+    
+    const isAdmin = currentRole === 'admin';
+    // 仅今日允许管理员点击保存（可根据需求调整）
+    document.getElementById('saveBtn').disabled = (dateStr !== todayStr);
+    
+    // 清空现有列表
+    document.querySelectorAll('.list-body, #studentBody').forEach(b => b.innerHTML = '');
+
+    try {
+        const { data, error } = await client.from('HOMEWORK_TASKS').select('*').eq('date_str', dateStr);
+        if (error) throw error;
+
+        if (isAdmin) {
+            // --- 管理员逻辑：保留版本一的自动初始化 ---
+            document.getElementById('adminArea').classList.remove('hidden');
+            document.getElementById('studentArea').classList.add('hidden');
+            
+            const hasCommon = data.some(d => d.target_user === 'all');
+            if (hasCommon) {
+                data.forEach(d => addRow(d.target_user || 'all', d));
+            } else if (dateStr === todayStr || dateStr === tomorrowStr) {
+                // 如果是今天或明天且没数据，加载默认模版
+                defaultCommonTasks.forEach(t => addRow('all', {subject:t.s, content:t.c}));
+                data.filter(d => d.target_user !== 'all').forEach(d => addRow(d.target_user, d));
+                if (!data.some(d => d.target_user === 'dudu')) addRow('dudu');
+                if (!data.some(d => d.target_user === 'bobo')) addRow('bobo');
+            } else {
+                data.forEach(d => addRow(d.target_user || 'all', d));
+            }
+        } else {
+            // --- 学生逻辑：整合版本二的 AI 批改与多字段逻辑 ---
+            document.getElementById('adminArea').classList.add('hidden');
+            document.getElementById('studentArea').classList.remove('hidden');
+            
+            // 过滤出属于当前学生或全员的任务
+            const studentTasks = data.filter(d => d.target_user === 'all' || d.target_user === currentRole);
+            studentTasks.forEach(d => {
+                addStaticRowWithAI(d, dateStr === todayStr);
+            });
+        }
+    } catch (err) { 
+        console.error("加载面板失败:", err); 
+    }
+}
+
+/**
+ * 整合后的静态行渲染函数（包含 AI 批改结果展示）
+ */
+function addStaticRowWithAI(d, isToday) {
+    const tr = document.createElement('tr');
+    
+    // 1. 逻辑整合：根据角色选择图片字段 (优先显示个人专属图，无则显示通用图)
+    const imgUrl = currentRole === 'dudu' ? (d.dudu_img || d.image_url) : (d.bobo_img || d.image_url);
+    
+    // 2. 逻辑整合：根据角色选择批改建议 (优先显示个人专属批改，无则显示通用批改)
+    const review = currentRole === 'dudu' ? (d.dudu_review || d.ai_review) : (d.bobo_review || d.ai_review);
+    
+    // 3. 逻辑整合：准确计算完成状态
+    let myStatus = false;
+    if (currentRole === 'dudu') {
+        myStatus = d.target_user === 'all' ? d.dudu_status : d.status;
+    } else if (currentRole === 'bobo') {
+        myStatus = d.target_user === 'all' ? d.bobo_status : d.status;
+    }
+
+    const statusIcon = myStatus ? '🟢' : '⚪';
+    const imgHtml = imgUrl ? `<img src="${imgUrl}" class="img-preview" onclick="window.open('${imgUrl}')">` : '';
+    const cameraBtn = isToday ? `<button class="cam-btn" onclick="triggerCamera(${d.id})">📸拍照</button>` : '';
+    
+    // 4. 渲染 HTML：包含版本二的 ai-review-box 样式
+    tr.innerHTML = `
+        <td>${d.subject}</td>
+        <td>
+            ${d.content}
+            ${review ? `<div class="ai-review-box" style="margin-top:8px; padding:8px; background:#f0f0f7; border-radius:6px; font-size:13px; color:#444; border-left:3px solid #5856d6;">🤖 ${review}</div>` : ''}
+        </td>
+        <td style="text-align:center">${statusIcon}</td>
+        <td>
+            <div style="display:flex; align-items:center; gap:5px;">
+                ${imgHtml}
+                ${cameraBtn}
+                <input type="file" id="cam-${d.id}" accept="image/*" capture="environment" style="display:none" onchange="handleFileSelect(this, ${d.id})">
+            </div>
+        </td>
+    `;
+    document.getElementById('studentBody').appendChild(tr);
+}
+        function triggerCamera(id) { document.getElementById(`cam-${id}`).click(); }
+        async function handleFileSelect(input, taskId) {
+            const file = input.files[0]; if (!file) return;
+            try {
+                const fn = `hw_${taskId}_${Date.now()}.jpg`;
+                await client.storage.from('HOMEWORK_PHOTOS').upload(fn, file);
+                const { data } = client.storage.from('HOMEWORK_PHOTOS').getPublicUrl(fn);
+                await client.from('HOMEWORK_TASKS').update({ image_url: data.publicUrl }).eq('id', taskId);
+                loadDashboard();
+            } catch (err) { alert("上传失败"); }
+        }
+
 
         async function handleFileSelect(input, taskId) {
             const file = input.files[0]; if (!file) return;
