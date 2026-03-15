@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -105,6 +104,9 @@
         const users = {'admin':'admin', 'dudu':'dudu', 'bobo':'bobo'};
         const subjects = ["学而思数学", "乐读数学", "乐读英语", "乐读语文", "校内作业", "集训队", "其他"];
         
+        // 增加一个状态集合，用于记录哪些任务正在被 AI 批改，优化用户体验
+        window.pendingAITasks = new Set();
+
         const defaultCommonTasks = [
             {s: "学而思数学", c: "数感小超市"},
             {s: "乐读数学", c: "乐读小超市"},
@@ -130,11 +132,9 @@
         }
 
         async function changeDate(days) {
-            // 切换日期前自动保存管理员的任何修改（包括历史状态）
             if (currentRole === 'admin') {
                 await doSave(false);
             }
-            
             viewDate.setDate(viewDate.getDate() + days);
             const today = new Date();
             const tomorrow = new Date(today.getTime() + 864e5);
@@ -160,7 +160,8 @@
             document.querySelectorAll('.list-body, #studentBody').forEach(b => b.innerHTML = '');
 
             try {
-                const { data, error } = await client.from('HOMEWORK_TASKS').select('*').eq('date_str', dateStr);
+                // 按日期拉取数据
+                const { data, error } = await client.from('HOMEWORK_TASKS').select('*').eq('date_str', dateStr).order('id');
                 if (error) throw error;
 
                 if (isAdmin) {
@@ -188,6 +189,17 @@
         function addRow(type, data = null) {
             const tbody = document.querySelector(`#tbl-${type} .list-body`);
             const tr = document.createElement('tr');
+            
+            // 【重要】将重要数据绑定到 DOM，防止管理员执行 doSave() 覆盖丢失孩子图片和 AI 评价
+            if (data && data.id) {
+                tr.dataset.id = data.id;
+                if (data.image_url) tr.dataset.image_url = data.image_url;
+                if (data.dudu_img) tr.dataset.dudu_img = data.dudu_img;
+                if (data.bobo_img) tr.dataset.bobo_img = data.bobo_img;
+                if (data.dudu_review) tr.dataset.dudu_review = data.dudu_review;
+                if (data.bobo_review) tr.dataset.bobo_review = data.bobo_review;
+            }
+
             let opts = subjects.map(s => `<option value="${s}" ${(data && data.subject === s) ? 'selected' : ''}>${s}</option>`).join('');
             
             let statusHtml = '';
@@ -212,13 +224,30 @@
             }
             actionHtml += `<button class="mini-btn btn-del" onclick="this.closest('tr').remove()">删除</button></div>`;
 
-            tr.innerHTML = `<td><select class="s-in">${opts}</select></td><td><input type="text" class="c-in" value="${data ? data.content : ''}"></td><td>${statusHtml}</td><td>${actionHtml}</td>`;
+            // 【UI更新】管理员也能在下方看到 AI 批改的结果
+            let reviewHtml = '';
+            if (data) {
+                if ((type === 'all' || type === 'dudu') && data.dudu_review) {
+                    reviewHtml += `<div style="font-size:10px; color:#8b572a; margin-top:4px; background:#fff3e0; padding:4px; border-radius:3px; white-space: pre-wrap;">👦🏼 ${data.dudu_review}</div>`;
+                }
+                if ((type === 'all' || type === 'bobo') && data.bobo_review) {
+                    reviewHtml += `<div style="font-size:10px; color:#666; margin-top:4px; background:#f5f5f5; padding:4px; border-radius:3px; white-space: pre-wrap;">👦🏻 ${data.bobo_review}</div>`;
+                }
+                // AI 批改进行中的提示
+                if (window.pendingAITasks.has(data.id)) {
+                    reviewHtml += `<div style="font-size:10px; color:#f57c00; margin-top:4px;">⏳ AI批改中...</div>`;
+                }
+            }
+
+            tr.innerHTML = `<td><select class="s-in">${opts}</select></td>
+                            <td><input type="text" class="c-in" value="${data ? data.content : ''}">${reviewHtml}</td>
+                            <td>${statusHtml}</td>
+                            <td>${actionHtml}</td>`;
             tbody.appendChild(tr);
         }
 
         function toggleQuickStatus(el) {
             el.classList.toggle('status-active');
-            // 无论日期，只要管理员勾选，立即执行同步保存
             doSave(false); 
         }
 
@@ -253,18 +282,33 @@
 
         function addStaticRow(d, isToday) {
             const tr = document.createElement('tr');
-            const img = d.image_url ? `<img src="${d.image_url}" class="img-preview" onclick="window.open('${d.image_url}')">` : '';
+            
+            // 准确获取对应角色的图片
+            const imgUrl = currentRole === 'dudu' ? (d.dudu_img || d.image_url) : (d.bobo_img || d.image_url);
+            const img = imgUrl ? `<img src="${imgUrl}" class="img-preview" onclick="window.open('${imgUrl}')">` : '';
             const btn = isToday ? `<button style="width:auto;padding:4px;font-size:10px;background:#5856d6;" onclick="triggerCamera(${d.id})">📸拍照</button>` : '';
             
-            // 关键：学生端根据身份准确显示状态
             let myStatus = false;
+            let myReview = '';
+            
             if (currentRole === 'dudu') {
                 myStatus = d.target_user === 'all' ? d.dudu_status : d.status;
+                myReview = d.dudu_review || '';
             } else if (currentRole === 'bobo') {
                 myStatus = d.target_user === 'all' ? d.bobo_status : d.status;
+                myReview = d.bobo_review || '';
             }
 
-            tr.innerHTML = `<td>${d.subject}</td><td>${d.content}</td><td style="text-align:center">${myStatus?'🟢':'⚪'}</td><td>${img}${btn}<input type="file" id="cam-${d.id}" accept="image/*" capture="environment" style="display:none" onchange="handleFileSelect(this, ${d.id})"></td>`;
+            // 【UI更新】将 AI 批改结果展示在"内容"列下方
+            let contentHtml = `<span>${d.content}</span>`;
+            if (window.pendingAITasks.has(d.id)) {
+                contentHtml += `<div style="margin-top:5px; padding:6px; background:#fff8e1; color:#f57c00; font-size:11px; border-radius:4px;">⏳ AI正在批改中，请稍候...</div>`;
+            } else if (myReview) {
+                contentHtml += `<div style="margin-top:5px; padding:6px; background:#f0f8ff; border-left:3px solid #4a90e2; border-radius:4px; font-size:11px; color:#333; white-space: pre-wrap;">🤖 <b>AI批改:</b><br>${myReview}</div>`;
+            }
+
+            // ⚠️ 新增：传入 d.target_user 以便拍照后更新正确的完成状态
+            tr.innerHTML = `<td>${d.subject}</td><td>${contentHtml}</td><td style="text-align:center">${myStatus?'🟢':'⚪'}</td><td>${img}${btn}<input type="file" id="cam-${d.id}" accept="image/*" capture="environment" style="display:none" onchange="handleFileSelect(this, ${d.id}, '${d.target_user}')"></td>`;
             document.getElementById('studentBody').appendChild(tr);
         }
 
@@ -284,6 +328,15 @@
                     const s = r.querySelector('.s-in').value, c = r.querySelector('.c-in').value;
                     if (c.trim()) {
                         const t = { date_str: dateStr, subject: s, content: c.trim(), target_user: type };
+                        
+                        // 【修复】提取我们绑定在 DOM 上的历史数据，防止重置数据库时清空照片和 AI 评论
+                        if (r.dataset.id) t.id = parseInt(r.dataset.id);
+                        if (r.dataset.image_url) t.image_url = r.dataset.image_url;
+                        if (r.dataset.dudu_img) t.dudu_img = r.dataset.dudu_img;
+                        if (r.dataset.bobo_img) t.bobo_img = r.dataset.bobo_img;
+                        if (r.dataset.dudu_review) t.dudu_review = r.dataset.dudu_review;
+                        if (r.dataset.bobo_review) t.bobo_review = r.dataset.bobo_review;
+
                         if (type === 'all') {
                             t.dudu_status = r.querySelector('.status-row:nth-child(1) .status-icon').classList.contains('status-active');
                             t.bobo_status = r.querySelector('.status-row:nth-child(2) .status-icon').classList.contains('status-active');
@@ -299,7 +352,6 @@
             });
 
             try {
-                // 覆盖保存逻辑：先删后增，确保所有状态（包括历史日期）同步至数据库
                 await client.from('HOMEWORK_TASKS').delete().eq('date_str', dateStr);
                 if (tasks.length > 0) {
                     await client.from('HOMEWORK_TASKS').insert(tasks);
@@ -314,66 +366,84 @@
 
         function triggerCamera(id) { document.getElementById(`cam-${id}`).click(); }
 
-        // --- 修改 handleFileSelect 以支持分角色存储和触发 AI ---
-    async function handleFileSelect(input, taskId) {
-    const file = input.files[0]; if (!file) return;
-    try {
-        // 1. 上传图片
-        const fn = `hw_${taskId}_${currentRole}_${Date.now()}.jpg`;
-        await client.storage.from('HOMEWORK_PHOTOS').upload(fn, file);
-        const { data: urlData } = client.storage.from('HOMEWORK_PHOTOS').getPublicUrl(fn);
-        
-        // 2. 根据角色更新对应的图片字段（不再只写 image_url）
-        const updateObj = currentRole === 'dudu' ? { dudu_img: urlData.publicUrl } : { bobo_img: urlData.publicUrl };
-        // 同时兼容旧版显示，依然更新 image_url
-        updateObj.image_url = urlData.publicUrl;
-        
-        await client.from('HOMEWORK_TASKS').update(updateObj).eq('id', taskId);
+        // ⚠️ 接收第三个参数 taskTargetUser，用于判断修改哪个状态
+        async function handleFileSelect(input, taskId, taskTargetUser) {
+            const file = input.files[0]; if (!file) return;
+            try {
+                // UI 优化：添加占位提示状态
+                window.pendingAITasks.add(taskId);
+                
+                const fn = `hw_${taskId}_${currentRole}_${Date.now()}.jpg`;
+                await client.storage.from('HOMEWORK_PHOTOS').upload(fn, file);
+                const { data: urlData } = client.storage.from('HOMEWORK_PHOTOS').getPublicUrl(fn);
+                
+                const updateObj = currentRole === 'dudu' ? { dudu_img: urlData.publicUrl } : { bobo_img: urlData.publicUrl };
+                updateObj.image_url = urlData.publicUrl;
+                
+                await client.from('HOMEWORK_TASKS').update(updateObj).eq('id', taskId);
 
-        // 3. 异步触发 Gemini 批改（不阻塞 UI 渲染）
-        callGeminiAI(urlData.publicUrl, taskId);
-        
-        loadDashboard();
-    } catch (err) { 
-        console.error("上传失败:", err);
-        alert("操作失败"); 
-    }
-}
+                // 立即刷新，让图片和“批改中”的提示显示出来
+                loadDashboard();
 
-// --- 新增：调用 Gemini 云函数 ---
-
-async function callGeminiAI(imageUrl, taskId) {
-  try {
-    const response = await client.functions.invoke('gemini-review', {
-      body: {
-        imageUrl,
-        prompt: `
-          角色：你是一位拥有20年教学经验的资深小学导师，擅长极简、精准的作业批改，评价风格直击要点，拒绝冗余。
-          任务：请识别并批改上传的图片（仅限：数学、语文、英语、日记之一）。
-          
-          输出格式要求：
-          1. 首行直接注明【科目：XXX】。
-          2. 核心反馈（按科目执行，此处无需出现标题,直接显示评价即可）：
-             - 数学：数据统计（总题量/空格数、错误数、正确率）+ 错题清单（序号及简要原因）。
-             - 语文：请先理解题目的意思再进行批改，批改过程中主要关注是否有错别字,以及书写不规范的地方。
-             - 英语：重点检查单词拼写、语法、时态，仅列出错误点及正确表达。
-             - 日记：罗列出不通顺处及修改建议，并用1句优点 + 1个改进点总结。
-          3. 最后总结：1句严谨的鼓励（不超过30字）。
-        `
-      }
-    });
-        
-        if (error) throw error;
-        
-        if (data && data.text) {
-            // 将 AI 结果存入对应角色的评论区
-            const reviewField = currentRole === 'dudu' ? 'dudu_review' : 'bobo_review';
-            await client.from('HOMEWORK_TASKS').update({ [reviewField]: data.text }).eq('id', taskId);
-            console.log("AI 批改已同步到数据库");
+                // 触发 AI 并将 taskTargetUser 传过去
+                callGeminiAI(urlData.publicUrl, taskId, taskTargetUser);
+                
+            } catch (err) { 
+                window.pendingAITasks.delete(taskId);
+                console.error("上传失败:", err);
+                alert("操作失败"); 
+                loadDashboard();
+            }
         }
-    } catch (err) { 
-        console.error("Gemini 批改过程异常:", err); 
-    }
-}    </script>
+
+        // ⚠️ 新增接收 taskTargetUser 参数
+        async function callGeminiAI(imageUrl, taskId, taskTargetUser) {
+            try {
+                // 【修复】正确解构 API 的返回值 data 和 error
+                const { data, error } = await client.functions.invoke('gemini-review', {
+                    body: {
+                        imageUrl,
+                        prompt: `
+                        角色：你是一位拥有20年教学经验的资深小学导师，擅长极简、精准的作业批改，评价风格直击要点，拒绝冗余。
+                        任务：请识别并批改上传的图片（仅限：数学、语文、英语、日记之一）。
+                        
+                        输出格式要求：
+                        1. 首行直接注明【科目：XXX】。
+                        2. 核心反馈（按科目执行，此处无需出现标题,直接显示评价即可）：
+                            - 数学：数据统计（总题量/空格数、错误数、正确率）+ 错题清单（序号及简要原因）。
+                            - 语文：请先理解题目的意思再进行批改，批改过程中主要关注是否有错别字,以及书写不规范的地方。
+                            - 英语：重点检查单词拼写、语法、时态，仅列出错误点及正确表达。
+                            - 日记：罗列出不通顺处及修改建议，并用1句优点 + 1个改进点总结。
+                        3. 最后总结：1句严谨的鼓励（不超过30字）。
+                        `
+                    }
+                });
+                
+                if (error) throw error;
+                
+                if (data && data.text) {
+                    const reviewField = currentRole === 'dudu' ? 'dudu_review' : 'bobo_review';
+                    const updateObj = { [reviewField]: data.text };
+
+                    // 【更新状态逻辑】同步将用户的完成状态改为绿色（已完成）
+                    if (taskTargetUser === 'all') {
+                        const statusField = currentRole === 'dudu' ? 'dudu_status' : 'bobo_status';
+                        updateObj[statusField] = true;
+                    } else {
+                        updateObj.status = true;
+                    }
+
+                    await client.from('HOMEWORK_TASKS').update(updateObj).eq('id', taskId);
+                    console.log("AI 批改已同步到数据库，状态已更新");
+                }
+            } catch (err) { 
+                console.error("Gemini 批改过程异常:", err); 
+            } finally {
+                // 清理加载状态并刷新最终视图，渲染出批改内容及打勾完成的状态
+                window.pendingAITasks.delete(taskId);
+                loadDashboard();
+            }
+        }
+    </script>
 </body>
 </html>
