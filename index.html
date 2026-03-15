@@ -109,10 +109,10 @@
 
         const defaultCommonTasks = [
             {s: "学而思数学", c: "数感小超市"},
-            {s: "乐读数学", c: "乐读小超市"},
+           // {s: "乐读数学", c: "乐读小超市"},
             {s: "乐读英语", c: "单词小超市"},
-            {s: "乐读语文", c: "小花园"},
-            {s: "乐读语文", c: "生字描红本"}
+            {s: "乐读语文", c: "小花园"}
+           // {s: "乐读语文", c: "生字描红本"}
         ];
 
         let currentRole = '';
@@ -222,8 +222,8 @@
                 actionHtml += `<button class="mini-btn btn-copy" onclick="copyToOther(this, '${targetKey}')">👯加给${targetName}</button>`;
                 actionHtml += `<button class="mini-btn btn-move-tmr" onclick="moveTaskToNextDay(this, '${type}')">📅移后一天</button>`;
             }
-            actionHtml += `<button class="mini-btn btn-del" onclick="this.closest('tr').remove()">删除</button></div>`;
-
+            actionHtml += `<button class="mini-btn btn-del" onclick="deleteTask(this)">删除</button></div>`;
+            
             // 【UI更新】管理员也能在下方看到 AI 批改的结果
             let reviewHtml = '';
             if (data) {
@@ -245,7 +245,24 @@
                             <td>${actionHtml}</td>`;
             tbody.appendChild(tr);
         }
-
+async function deleteTask(btn) {
+            const tr = btn.closest('tr');
+            const taskId = tr.dataset.id;
+            
+            if (confirm("确定要删除这项作业吗？")) {
+                if (taskId) {
+                    // 如果数据库里已经有这一条，执行物理删除
+                    const { error } = await client.from('HOMEWORK_TASKS').delete().eq('id', taskId);
+                    if (error) {
+                        alert("删除失败: " + error.message);
+                        return;
+                    }
+                }
+                tr.remove(); // 移除界面元素
+                // 物理删除后不需要再调用 doSave，因为数据库已经同步了
+            }
+        }
+        
         function toggleQuickStatus(el) {
             el.classList.toggle('status-active');
             doSave(false); 
@@ -340,7 +357,7 @@ async function moveTaskToNextDay(el, fromWho) {
             const tasks = [];
             let pushText = `📅 **日期: ${dateStr}**\n\n`;
 
-            // 1. 收集当前页面上的所有任务
+            // 1. 遍历三个表格收集数据
             ['all', 'dudu', 'bobo'].forEach(type => {
                 const rows = document.querySelectorAll(`#tbl-${type} .list-body tr`);
                 let sectHasData = false;
@@ -348,7 +365,9 @@ async function moveTaskToNextDay(el, fromWho) {
                 let sectContent = "";
 
                 rows.forEach(r => {
-                    const s = r.querySelector('.s-in').value, c = r.querySelector('.c-in').value;
+                    const s = r.querySelector('.s-in').value;
+                    const c = r.querySelector('.c-in').value;
+                    
                     if (c.trim()) {
                         const t = { 
                             date_str: dateStr, 
@@ -357,22 +376,26 @@ async function moveTaskToNextDay(el, fromWho) {
                             target_user: type 
                         };
                         
-                        // 如果有 ID，说明是已有记录，必须带上以执行更新而非新增
-                        if (r.dataset.id) t.id = parseInt(r.dataset.id);
+                        // 【关键】如果是已有任务，带上 ID 以执行更新操作
+                        if (r.dataset.id && r.dataset.id !== "undefined") {
+                            t.id = parseInt(r.dataset.id);
+                        }
                         
-                        // 保留图片和评价数据
+                        // 【关键】保留照片数据和 AI 评价，防止被管理员保存操作覆盖清空
                         if (r.dataset.image_url) t.image_url = r.dataset.image_url;
                         if (r.dataset.dudu_img) t.dudu_img = r.dataset.dudu_img;
                         if (r.dataset.bobo_img) t.bobo_img = r.dataset.bobo_img;
                         if (r.dataset.dudu_review) t.dudu_review = r.dataset.dudu_review;
                         if (r.dataset.bobo_review) t.bobo_review = r.dataset.bobo_review;
 
+                        // 处理完成状态
                         if (type === 'all') {
                             t.dudu_status = r.querySelector('.status-row:nth-child(1) .status-icon').classList.contains('status-active');
                             t.bobo_status = r.querySelector('.status-row:nth-child(2) .status-icon').classList.contains('status-active');
                         } else {
                             t.status = r.querySelector('.status-icon').classList.contains('status-active');
                         }
+                        
                         tasks.push(t);
                         sectContent += `☑️ **${s}**: ${c.trim()}\n\n`;
                         sectHasData = true;
@@ -382,23 +405,29 @@ async function moveTaskToNextDay(el, fromWho) {
             });
 
             try {
-                // 【核心修复】：不再 delete，而是使用 upsert
-                // 这样只会更新或增加当前页面的条目，不会误删从其他页面“飞”过来的新任务
+                // 2. 使用 upsert (存在则更新 ID 匹配行，不存在则插入新行)
+                // 这种方式不会删除数据库中已存在但未在当前前端显示的行（如从昨天移过来的任务）
                 if (tasks.length > 0) {
-                    const { error } = await client.from('HOMEWORK_TASKS').upsert(tasks, { onConflict: 'id' });
-                    if (error) throw error;
+                    const { error: upsertError } = await client.from('HOMEWORK_TASKS').upsert(tasks, { onConflict: 'id' });
+                    if (upsertError) throw upsertError;
                 }
                 
+                // 3. 微信推送
                 if (needPush && SERVER_CHAN_KEY.startsWith("SCT")) {
                     await fetch(`https://sctapi.ftqq.com/${SERVER_CHAN_KEY}.send?title=${encodeURIComponent("🔔 作业提醒: " + dateStr)}&desp=${encodeURIComponent(pushText)}`, {mode:'no-cors'});
                     alert("发布成功！");
+                } else if (!needPush) {
+                    console.log("后台静默同步成功");
                 }
+                
+                // 4. 保存后重新加载，确保所有行都获得了数据库分配的 ID
+                await loadDashboard();
+
             } catch (err) { 
-                console.error("保存失败", err); 
-                alert("保存失败，请检查网络");
+                console.error("保存失败详情:", err);
+                alert("保存失败，请检查数据库权限或控制台错误日志");
             }
-        }
-        
+        }        
         function triggerCamera(id) { document.getElementById(`cam-${id}`).click(); }
 
         // ⚠️ 接收第三个参数 taskTargetUser，用于判断修改哪个状态
