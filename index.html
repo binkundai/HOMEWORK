@@ -267,7 +267,7 @@
             doSave(false); 
         }
 
-        async function moveTaskToNextDay(el, fromWho) {
+async function moveTaskToNextDay(el, fromWho) {
             const tr = el.closest('tr');
             const sub = tr.querySelector('.s-in').value, con = tr.querySelector('.c-in').value;
             if (!con.trim()) return;
@@ -276,10 +276,25 @@
             nextDay.setDate(nextDay.getDate() + 1);
             const nextDayStr = getStr(nextDay);
             
-            await client.from('HOMEWORK_TASKS').insert({date_str: nextDayStr, subject: sub, content: con, target_user: fromWho, status: false});
-            alert(`已移至 ${nextDayStr}`);
-        }
+            // 插入新任务
+            const { error } = await client.from('HOMEWORK_TASKS').insert({
+                date_str: nextDayStr, 
+                subject: sub, 
+                content: con, 
+                target_user: fromWho, 
+                status: false
+            });
 
+            if(!error) {
+                // 成功移走后，删除当前行并保存当前页
+                tr.remove();
+                await doSave(false);
+                alert(`✅ 已移至 ${nextDayStr}`);
+            } else {
+                alert("操作失败");
+            }
+        }
+        
         function addStaticRow(d, isToday) {
             const tr = document.createElement('tr');
             
@@ -325,20 +340,27 @@
             const tasks = [];
             let pushText = `📅 **日期: ${dateStr}**\n\n`;
 
+            // 1. 收集当前页面上的所有任务
             ['all', 'dudu', 'bobo'].forEach(type => {
                 const rows = document.querySelectorAll(`#tbl-${type} .list-body tr`);
                 let sectHasData = false;
                 const titleMap = { 'all': '📋 通用作业', 'dudu': '👦🏼 嘟嘟专属', 'bobo': '👦🏻 啵啵专属' };
-                let sectHeader = `## ${titleMap[type]}\n`; 
                 let sectContent = "";
 
                 rows.forEach(r => {
                     const s = r.querySelector('.s-in').value, c = r.querySelector('.c-in').value;
                     if (c.trim()) {
-                        const t = { date_str: dateStr, subject: s, content: c.trim(), target_user: type };
+                        const t = { 
+                            date_str: dateStr, 
+                            subject: s, 
+                            content: c.trim(), 
+                            target_user: type 
+                        };
                         
-                        // 【修复】提取我们绑定在 DOM 上的历史数据，防止重置数据库时清空照片和 AI 评论
+                        // 如果有 ID，说明是已有记录，必须带上以执行更新而非新增
                         if (r.dataset.id) t.id = parseInt(r.dataset.id);
+                        
+                        // 保留图片和评价数据
                         if (r.dataset.image_url) t.image_url = r.dataset.image_url;
                         if (r.dataset.dudu_img) t.dudu_img = r.dataset.dudu_img;
                         if (r.dataset.bobo_img) t.bobo_img = r.dataset.bobo_img;
@@ -356,22 +378,27 @@
                         sectHasData = true;
                     }
                 });
-                if(sectHasData) pushText += sectHeader + sectContent + `\n---\n`;
+                if(sectHasData) pushText += `## ${titleMap[type]}\n` + sectContent + `\n---\n`;
             });
 
             try {
-                await client.from('HOMEWORK_TASKS').delete().eq('date_str', dateStr);
+                // 【核心修复】：不再 delete，而是使用 upsert
+                // 这样只会更新或增加当前页面的条目，不会误删从其他页面“飞”过来的新任务
                 if (tasks.length > 0) {
-                    await client.from('HOMEWORK_TASKS').insert(tasks);
+                    const { error } = await client.from('HOMEWORK_TASKS').upsert(tasks, { onConflict: 'id' });
+                    if (error) throw error;
                 }
                 
                 if (needPush && SERVER_CHAN_KEY.startsWith("SCT")) {
                     await fetch(`https://sctapi.ftqq.com/${SERVER_CHAN_KEY}.send?title=${encodeURIComponent("🔔 作业提醒: " + dateStr)}&desp=${encodeURIComponent(pushText)}`, {mode:'no-cors'});
                     alert("发布成功！");
                 }
-            } catch (err) { console.error("保存失败", err); }
+            } catch (err) { 
+                console.error("保存失败", err); 
+                alert("保存失败，请检查网络");
+            }
         }
-
+        
         function triggerCamera(id) { document.getElementById(`cam-${id}`).click(); }
 
         // ⚠️ 接收第三个参数 taskTargetUser，用于判断修改哪个状态
