@@ -1,9 +1,10 @@
+
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>家庭作业管理系统 v3.4</title>
+    <title>家庭作业管理系统 v2.7</title>
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <style>
         :root { --primary-color: #4a90e2; --bg-color: #f5f7fa; --dudu-color: #8b572a; --bobo-color: #666; --del-color: #ff3b30; }
@@ -309,78 +310,55 @@
                     alert("发布成功！");
                 }
             } catch (err) { console.error("保存失败", err); }
-        }       
+        }
+
+        function triggerCamera(id) { document.getElementById(`cam-${id}`).click(); }
+
+        // --- 修改 handleFileSelect 以支持分角色存储和触发 AI ---
+    async function handleFileSelect(input, taskId) {
+    const file = input.files[0]; if (!file) return;
+    try {
+        // 1. 上传图片
+        const fn = `hw_${taskId}_${currentRole}_${Date.now()}.jpg`;
+        await client.storage.from('HOMEWORK_PHOTOS').upload(fn, file);
+        const { data: urlData } = client.storage.from('HOMEWORK_PHOTOS').getPublicUrl(fn);
         
+        // 2. 根据角色更新对应的图片字段（不再只写 image_url）
+        const updateObj = currentRole === 'dudu' ? { dudu_img: urlData.publicUrl } : { bobo_img: urlData.publicUrl };
+        // 同时兼容旧版显示，依然更新 image_url
+        updateObj.image_url = urlData.publicUrl;
         
-        async function handleFileSelect(input, taskId) {
-            const file = input.files[0]; if (!file) return;
-            try {
-                const fn = `hw_${taskId}_${Date.now()}.jpg`;
-                await client.storage.from('HOMEWORK_PHOTOS').upload(fn, file);
-                const { data } = client.storage.from('HOMEWORK_PHOTOS').getPublicUrl(fn);
-                await client.from('HOMEWORK_TASKS').update({ image_url: data.publicUrl }).eq('id', taskId);
-                loadDashboard();
-            } catch (err) { alert("上传失败"); }
-        }
+        await client.from('HOMEWORK_TASKS').update(updateObj).eq('id', taskId);
 
-
-        async function handleFileSelect(input, taskId) {
-            const file = input.files[0]; if (!file) return;
-            try {
-                const fileName = `hw_${taskId}_${currentRole}_${Date.now()}.jpg`;
-                await client.storage.from('HOMEWORK_PHOTOS').upload(fileName, file);
-                const { data: urlData } = client.storage.from('HOMEWORK_PHOTOS').getPublicUrl(fileName);
-                const publicUrl = urlData.publicUrl;
-
-                const updateObj = currentRole === 'dudu' ? { dudu_img: publicUrl } : { bobo_img: publicUrl };
-                await client.from('HOMEWORK_TASKS').update(updateObj).eq('id', taskId);
-                
-                // 调用 Gemini 云函数
-                await callGeminiAI(publicUrl, taskId);
-                loadDashboard();
-            } catch (err) { alert("上传失败"); }
-        }
-
-async function callGeminiAI(imageUrl, taskId) {
-  try {
-    const response = await client.functions.invoke('gemini-review', {
-      body: {
-        imageUrl,
-        prompt: `
-          角色：你是一位拥有20年教学经验的资深小学导师，擅长极简、精准的作业批改，评价风格直击要点，拒绝冗余。
-          任务：请识别并批改上传的图片（仅限：数学、语文、英语、日记之一）。
-          
-          输出格式要求：
-          1. 首行直接注明【科目：XXX】。
-          2. 核心反馈（按科目执行。只需出现反馈无需标题行。）：
-             - 数学：数据统计（总题量/空格数、错误数、正确率）+ 错题清单（序号及简要原因）。
-             - 语文：请先理解题目意思和要求再进行批改，罗列错误的地方。
-             - 英语：重点检查单词拼写、语法、时态，仅列出错误点及正确表达。
-             - 日记：主要纠正书写不规范或不通顺处并作出修改建议，1句优点 + 1个改进点。
-          3. 最后总结：1句话鼓励（不超过30字）。
-        `
-      }
-    });
-    
-        // 检查返回数据结构
-        if (response.data && (response.data.text || response.data.error)) {
-            const aiText = response.data.error ? response.data.text : response.data.text;
-            
-            const updateObj = currentRole === 'dudu' ? { dudu_review: aiText } : { bobo_review: aiText };
-            await client.from('HOMEWORK_TASKS').update(updateObj).eq('id', taskId);
-            
-            loadDashboard(); // 确保数据库字段已补齐，否则这里也会报错
-        } else {
-            console.error("响应格式异常:", response);
-        }
+        // 3. 异步触发 Gemini 批改（不阻塞 UI 渲染）
+        callGeminiAI(urlData.publicUrl, taskId);
+        
+        loadDashboard();
     } catch (err) { 
-        console.error("无法解析 AI 响应:", err);
-        alert("批改出现问题，请查看控制台日志");
+        console.error("上传失败:", err);
+        alert("操作失败"); 
     }
 }
+
+// --- 新增：调用 Gemini 云函数 ---
+async function callGeminiAI(imageUrl, taskId) {
+    const prompt = "你是一位小学低年级特级教师。请批改图片中的作业，指出错误并给出鼓励性评语。";
+    try {
+        const { data, error } = await client.functions.invoke('gemini-review', { 
+            body: { imageUrl, prompt } 
+        });
         
-        function triggerCamera(id) { document.getElementById(`cam-${id}`).click(); }
-        function changeDate(n) { viewDate.setDate(viewDate.getDate() + n); loadDashboard(); }
-    </script>
+        if (error) throw error;
+        
+        if (data && data.text) {
+            // 将 AI 结果存入对应角色的评论区
+            const reviewField = currentRole === 'dudu' ? 'dudu_review' : 'bobo_review';
+            await client.from('HOMEWORK_TASKS').update({ [reviewField]: data.text }).eq('id', taskId);
+            console.log("AI 批改已同步到数据库");
+        }
+    } catch (err) { 
+        console.error("Gemini 批改过程异常:", err); 
+    }
+}    </script>
 </body>
 </html>
