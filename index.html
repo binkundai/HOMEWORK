@@ -283,9 +283,18 @@
         function addStaticRow(d, isToday) {
             const tr = document.createElement('tr');
             
-            // 准确获取对应角色的图片
-            const imgUrl = currentRole === 'dudu' ? (d.dudu_img || d.image_url) : (d.bobo_img || d.image_url);
-            const img = imgUrl ? `<img src="${imgUrl}" class="img-preview" onclick="window.open('${imgUrl}')">` : '';
+            // 准确获取对应角色的图片（现在可能是一串逗号分隔的 URL）
+            const imgRaw = currentRole === 'dudu' ? (d.dudu_img || d.image_url) : (d.bobo_img || d.image_url);
+            let imgHtml = '';
+            if (imgRaw) {
+                const urls = imgRaw.split(',');
+                urls.forEach(url => {
+                    if (url.trim()) {
+                        imgHtml += `<img src="${url.trim()}" class="img-preview" style="margin-right:2px; margin-bottom:2px;" onclick="window.open('${url.trim()}')">`;
+                    }
+                });
+            }
+            
             const btn = isToday ? `<button style="width:auto;padding:4px;font-size:10px;background:#5856d6;" onclick="triggerCamera(${d.id})">📸拍照</button>` : '';
             
             let myStatus = false;
@@ -299,19 +308,18 @@
                 myReview = d.bobo_review || '';
             }
 
-            // 【UI更新】将 AI 批改结果展示在"内容"列下方
             let contentHtml = `<span>${d.content}</span>`;
             if (window.pendingAITasks.has(d.id)) {
-                contentHtml += `<div style="margin-top:5px; padding:6px; background:#fff8e1; color:#f57c00; font-size:11px; border-radius:4px;">⏳ AI正在批改中，请稍候...</div>`;
+                contentHtml += `<div style="margin-top:5px; padding:6px; background:#fff8e1; color:#f57c00; font-size:11px; border-radius:4px;">⏳ AI正在批改多页内容，请稍候...</div>`;
             } else if (myReview) {
                 contentHtml += `<div style="margin-top:5px; padding:6px; background:#f0f8ff; border-left:3px solid #4a90e2; border-radius:4px; font-size:11px; color:#333; white-space: pre-wrap;">🤖 <b>AI批改:</b><br>${myReview}</div>`;
             }
 
-            // ⚠️ 新增：传入 d.target_user 以便拍照后更新正确的完成状态
-            tr.innerHTML = `<td>${d.subject}</td><td>${contentHtml}</td><td style="text-align:center">${myStatus?'🟢':'⚪'}</td><td>${img}${btn}<input type="file" id="cam-${d.id}" accept="image/*" capture="environment" style="display:none" onchange="handleFileSelect(this, ${d.id}, '${d.target_user}')"></td>`;
+            // 注意这里的 input 增加了 multiple 属性，去掉了 capture="environment" 以支持多选
+            tr.innerHTML = `<td>${d.subject}</td><td>${contentHtml}</td><td style="text-align:center">${myStatus?'🟢':'⚪'}</td><td><div style="display:flex; flex-wrap:wrap;">${imgHtml}</div>${btn}<input type="file" id="cam-${d.id}" accept="image/*" multiple style="display:none" onchange="handleFileSelect(this, ${d.id}, '${d.target_user}')"></td>`;
             document.getElementById('studentBody').appendChild(tr);
         }
-
+        
         async function doSave(needPush = false) {
             const dateStr = getStr(viewDate);
             const tasks = [];
@@ -367,50 +375,58 @@
         function triggerCamera(id) { document.getElementById(`cam-${id}`).click(); }
 
         // ⚠️ 接收第三个参数 taskTargetUser，用于判断修改哪个状态
-        async function handleFileSelect(input, taskId, taskTargetUser) {
-            const file = input.files[0]; if (!file) return;
+       async function handleFileSelect(input, taskId, taskTargetUser) {
+            const files = input.files; 
+            if (!files || files.length === 0) return;
+            
             try {
-                // UI 优化：添加占位提示状态
                 window.pendingAITasks.add(taskId);
+                loadDashboard(); // 立即刷新，显示等待状态
                 
-                const fn = `hw_${taskId}_${currentRole}_${Date.now()}.jpg`;
-                await client.storage.from('HOMEWORK_PHOTOS').upload(fn, file);
-                const { data: urlData } = client.storage.from('HOMEWORK_PHOTOS').getPublicUrl(fn);
+                const uploadedUrls = [];
+                // 循环上传多张图片
+                for (let i = 0; i < files.length; i++) {
+                    const file = files[i];
+                    const fn = `hw_${taskId}_${currentRole}_${Date.now()}_${i}.jpg`;
+                    await client.storage.from('HOMEWORK_PHOTOS').upload(fn, file);
+                    const { data: urlData } = client.storage.from('HOMEWORK_PHOTOS').getPublicUrl(fn);
+                    uploadedUrls.push(urlData.publicUrl);
+                }
                 
-                const updateObj = currentRole === 'dudu' ? { dudu_img: urlData.publicUrl } : { bobo_img: urlData.publicUrl };
-                updateObj.image_url = urlData.publicUrl;
+                // 将多个 URL 用逗号拼接存入数据库
+                const joinedUrls = uploadedUrls.join(',');
+                const updateObj = currentRole === 'dudu' ? { dudu_img: joinedUrls } : { bobo_img: joinedUrls };
+                updateObj.image_url = joinedUrls; // 兼容旧版
                 
                 await client.from('HOMEWORK_TASKS').update(updateObj).eq('id', taskId);
+                loadDashboard(); // 刷新显示所有缩略图
 
-                // 立即刷新，让图片和“批改中”的提示显示出来
-                loadDashboard();
-
-                // 触发 AI 并将 taskTargetUser 传过去
-                callGeminiAI(urlData.publicUrl, taskId, taskTargetUser);
+                // 把数组传给 AI
+                callGeminiAI(uploadedUrls, taskId, taskTargetUser);
                 
             } catch (err) { 
                 window.pendingAITasks.delete(taskId);
                 console.error("上传失败:", err);
-                alert("操作失败"); 
+                alert("多图上传失败，请重试"); 
                 loadDashboard();
             }
         }
-
         // ⚠️ 新增接收 taskTargetUser 参数
-        async function callGeminiAI(imageUrl, taskId, taskTargetUser) {
+async function callGeminiAI(imageUrlsArray, taskId, taskTargetUser) {
             try {
-                // 【修复】正确解构 API 的返回值 data 和 error
                 const { data, error } = await client.functions.invoke('gemini-review', {
                     body: {
-                        imageUrl,
+                        imageUrls: imageUrlsArray, // 传递数组而不是单字符串
                         prompt: `
                         角色：你是一位拥有20年教学经验的资深小学导师，擅长极简、精准的作业批改，评价风格直击要点，拒绝冗余。
+                        【重要提示】：用户上传了 ${imageUrlsArray.length} 张图片，这可能是一道题的题干和解答分成了多页，或者是连续的多页作业。请务必将所有图片结合起来作为同一个上下文进行综合理解和批改。
+                        
                         任务：请识别并批改上传的图片（仅限：数学、语文、英语、日记之一）。
                         
                         输出格式要求：
                         1. 首行直接注明【科目：XXX】。
                         2. 核心反馈（按科目执行，此处无需出现标题,直接显示评价即可）：
-                            - 数学：数据统计（总题量/空格数、错误数、正确率）+ 错题清单（序号及简要原因）。
+                            - 数学：数据统计（总题量/空格数、错误数、正确率）+ 错题清单（序号及简要原因）。跨页的题目请整体看待。
                             - 语文：请先理解题目的意思再进行批改，批改过程中主要关注是否有错别字,以及书写不规范的地方。
                             - 英语：重点检查单词拼写、语法、时态，仅列出错误点及正确表达。
                             - 日记：罗列出不通顺处及修改建议，并用1句优点 + 1个改进点总结。
@@ -425,7 +441,6 @@
                     const reviewField = currentRole === 'dudu' ? 'dudu_review' : 'bobo_review';
                     const updateObj = { [reviewField]: data.text };
 
-                    // 【更新状态逻辑】同步将用户的完成状态改为绿色（已完成）
                     if (taskTargetUser === 'all') {
                         const statusField = currentRole === 'dudu' ? 'dudu_status' : 'bobo_status';
                         updateObj[statusField] = true;
@@ -434,12 +449,10 @@
                     }
 
                     await client.from('HOMEWORK_TASKS').update(updateObj).eq('id', taskId);
-                    console.log("AI 批改已同步到数据库，状态已更新");
                 }
             } catch (err) { 
                 console.error("Gemini 批改过程异常:", err); 
             } finally {
-                // 清理加载状态并刷新最终视图，渲染出批改内容及打勾完成的状态
                 window.pendingAITasks.delete(taskId);
                 loadDashboard();
             }
