@@ -119,6 +119,19 @@
         let viewDate = new Date();
         const getStr = (d) => new Intl.DateTimeFormat('zh-CN', {timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit'}).format(d).replace(/\//g, '-');
 
+        // 确保全局变量存在，避免报错
+        window.pendingAITasks = window.pendingAITasks || new Set();
+
+        // 唤起相机的核心函数
+        window.triggerCamera = function(id) {
+            const camInput = document.getElementById('cam-' + id);
+            if (camInput) {
+                camInput.click(); // 模拟点击隐藏的 input
+            } else {
+                alert("未找到上传控件，请刷新页面重试！");
+            }
+        }; 
+        
         function doLogin() {
             const role = document.getElementById('userRole').value;
             const pass = document.getElementById('password').value;
@@ -315,19 +328,21 @@ async function moveTaskToNextDay(el, fromWho) {
         function addStaticRow(d, isToday) {
             const tr = document.createElement('tr');
             
-            // 准确获取对应角色的图片（现在可能是一串逗号分隔的 URL）
+            // 准确获取对应角色的图片（支持解析逗号分隔的多图 URL）
             const imgRaw = currentRole === 'dudu' ? (d.dudu_img || d.image_url) : (d.bobo_img || d.image_url);
             let imgHtml = '';
             if (imgRaw) {
                 const urls = imgRaw.split(',');
                 urls.forEach(url => {
                     if (url.trim()) {
-                        imgHtml += `<img src="${url.trim()}" class="img-preview" style="margin-right:2px; margin-bottom:2px;" onclick="window.open('${url.trim()}')">`;
+                        // 增加 max-width 避免多图把表格撑爆
+                        imgHtml += `<img src="${url.trim()}" class="img-preview" style="margin-right:2px; margin-bottom:2px; max-width: 50px; cursor: pointer;" onclick="window.open('${url.trim()}')">`;
                     }
                 });
             }
             
-            const btn = isToday ? `<button style="width:auto;padding:4px;font-size:10px;background:#5856d6;" onclick="triggerCamera(${d.id})">📸拍照</button>` : '';
+            // 【修复点】：增加 type="button" 防止刷新，强化 onclick 的传参兼容性
+            const btn = isToday ? `<button type="button" style="width:auto;padding:4px;font-size:10px;background:#5856d6;color:white;border-radius:4px;border:none;" onclick="window.triggerCamera('${d.id}')">📸拍照/上传</button>` : '';
             
             let myStatus = false;
             let myReview = '';
@@ -341,14 +356,26 @@ async function moveTaskToNextDay(el, fromWho) {
             }
 
             let contentHtml = `<span>${d.content}</span>`;
+            
+            // 【修复点】：防御性检查，防止 Set 未初始化报错
+            window.pendingAITasks = window.pendingAITasks || new Set();
             if (window.pendingAITasks.has(d.id)) {
                 contentHtml += `<div style="margin-top:5px; padding:6px; background:#fff8e1; color:#f57c00; font-size:11px; border-radius:4px;">⏳ AI正在批改多页内容，请稍候...</div>`;
             } else if (myReview) {
                 contentHtml += `<div style="margin-top:5px; padding:6px; background:#f0f8ff; border-left:3px solid #4a90e2; border-radius:4px; font-size:11px; color:#333; white-space: pre-wrap;">🤖 <b>AI批改:</b><br>${myReview}</div>`;
             }
 
-            // 注意这里的 input 增加了 multiple 属性，去掉了 capture="environment" 以支持多选
-            tr.innerHTML = `<td>${d.subject}</td><td>${contentHtml}</td><td style="text-align:center">${myStatus?'🟢':'⚪'}</td><td><div style="display:flex; flex-wrap:wrap;">${imgHtml}</div>${btn}<input type="file" id="cam-${d.id}" accept="image/*" multiple style="display:none" onchange="handleFileSelect(this, ${d.id}, '${d.target_user}')"></td>`;
+            // 【修复点】：input 标签的 id 严格对应 triggerCamera，并加上 multiple 支持多图
+            tr.innerHTML = `
+                <td>${d.subject}</td>
+                <td>${contentHtml}</td>
+                <td style="text-align:center">${myStatus?'🟢':'⚪'}</td>
+                <td>
+                    <div style="display:flex; flex-wrap:wrap;">${imgHtml}</div>
+                    ${btn}
+                    <input type="file" id="cam-${d.id}" accept="image/*" multiple style="display:none" onchange="handleFileSelect(this, ${d.id}, '${d.target_user}')">
+                </td>
+            `;
             document.getElementById('studentBody').appendChild(tr);
         }
         
