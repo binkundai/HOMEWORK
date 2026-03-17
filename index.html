@@ -352,9 +352,14 @@ async function moveTaskToNextDay(el, fromWho) {
             document.getElementById('studentBody').appendChild(tr);
         }
         
-        async function doSave(needPush = false) {
+async function doSave(needPush = false) {
             const dateStr = getStr(viewDate);
-            const tasks = [];
+            
+            // 【核心修复】：将需要新增、更新、删除的任务分装到不同的数组
+            const tasksToInsert = [];
+            const tasksToUpdate = [];
+            const tasksToDelete = []; 
+            
             let pushText = `📅 **日期: ${dateStr}**\n\n`;
 
             // 1. 遍历三个表格收集数据
@@ -367,6 +372,7 @@ async function moveTaskToNextDay(el, fromWho) {
                 rows.forEach(r => {
                     const s = r.querySelector('.s-in').value;
                     const c = r.querySelector('.c-in').value;
+                    const taskId = r.dataset.id && r.dataset.id !== "undefined" ? parseInt(r.dataset.id) : null;
                     
                     if (c.trim()) {
                         const t = { 
@@ -376,12 +382,7 @@ async function moveTaskToNextDay(el, fromWho) {
                             target_user: type 
                         };
                         
-                        // 【关键】如果是已有任务，带上 ID 以执行更新操作
-                        if (r.dataset.id && r.dataset.id !== "undefined") {
-                            t.id = parseInt(r.dataset.id);
-                        }
-                        
-                        // 【关键】保留照片数据和 AI 评价，防止被管理员保存操作覆盖清空
+                        // 保留照片数据和 AI 评价
                         if (r.dataset.image_url) t.image_url = r.dataset.image_url;
                         if (r.dataset.dudu_img) t.dudu_img = r.dataset.dudu_img;
                         if (r.dataset.bobo_img) t.bobo_img = r.dataset.bobo_img;
@@ -396,20 +397,43 @@ async function moveTaskToNextDay(el, fromWho) {
                             t.status = r.querySelector('.status-icon').classList.contains('status-active');
                         }
                         
-                        tasks.push(t);
+                        // 【核心修复】：判断是已有数据还是新数据
+                        if (taskId) {
+                            t.id = taskId;
+                            tasksToUpdate.push(t);
+                        } else {
+                            tasksToInsert.push(t);
+                        }
+                        
                         sectContent += `☑️ **${s}**: ${c.trim()}\n\n`;
                         sectHasData = true;
+                    } else if (taskId) {
+                        // 如果用户清空了文本框，并且这是个老数据，说明用户想删掉它
+                        tasksToDelete.push(taskId);
                     }
                 });
                 if(sectHasData) pushText += `## ${titleMap[type]}\n` + sectContent + `\n---\n`;
             });
 
             try {
-                // 2. 使用 upsert (存在则更新 ID 匹配行，不存在则插入新行)
-                // 这种方式不会删除数据库中已存在但未在当前前端显示的行（如从昨天移过来的任务）
-                if (tasks.length > 0) {
-                    const { error: upsertError } = await client.from('HOMEWORK_TASKS').upsert(tasks, { onConflict: 'id' });
-                    if (upsertError) throw upsertError;
+                // 2. 分别执行数据库操作，避免因 Key 结构不一致导致的报错
+                
+                // 执行删除（清空了文本框的旧作业）
+                if (tasksToDelete.length > 0) {
+                    const { error } = await client.from('HOMEWORK_TASKS').delete().in('id', tasksToDelete);
+                    if (error) throw error;
+                }
+                
+                // 执行新增（完全没有 ID 的新作业）
+                if (tasksToInsert.length > 0) {
+                    const { error } = await client.from('HOMEWORK_TASKS').insert(tasksToInsert);
+                    if (error) throw error;
+                }
+                
+                // 执行更新（已有 ID 的作业）
+                if (tasksToUpdate.length > 0) {
+                    const { error } = await client.from('HOMEWORK_TASKS').upsert(tasksToUpdate, { onConflict: 'id' });
+                    if (error) throw error;
                 }
                 
                 // 3. 微信推送
@@ -420,53 +444,14 @@ async function moveTaskToNextDay(el, fromWho) {
                     console.log("后台静默同步成功");
                 }
                 
-                // 4. 保存后重新加载，确保所有行都获得了数据库分配的 ID
+                // 4. 保存后重新加载，确保所有行都获得了数据库分配的最新 ID
                 await loadDashboard();
 
             } catch (err) { 
                 console.error("保存失败详情:", err);
-                alert("保存失败，请检查数据库权限或控制台错误日志");
+                alert(`保存失败: ${err.message || '未知错误，请检查控制台'}`);
             }
         }        
-        function triggerCamera(id) { document.getElementById(`cam-${id}`).click(); }
-
-        // ⚠️ 接收第三个参数 taskTargetUser，用于判断修改哪个状态
-       async function handleFileSelect(input, taskId, taskTargetUser) {
-            const files = input.files; 
-            if (!files || files.length === 0) return;
-            
-            try {
-                window.pendingAITasks.add(taskId);
-                loadDashboard(); // 立即刷新，显示等待状态
-                
-                const uploadedUrls = [];
-                // 循环上传多张图片
-                for (let i = 0; i < files.length; i++) {
-                    const file = files[i];
-                    const fn = `hw_${taskId}_${currentRole}_${Date.now()}_${i}.jpg`;
-                    await client.storage.from('HOMEWORK_PHOTOS').upload(fn, file);
-                    const { data: urlData } = client.storage.from('HOMEWORK_PHOTOS').getPublicUrl(fn);
-                    uploadedUrls.push(urlData.publicUrl);
-                }
-                
-                // 将多个 URL 用逗号拼接存入数据库
-                const joinedUrls = uploadedUrls.join(',');
-                const updateObj = currentRole === 'dudu' ? { dudu_img: joinedUrls } : { bobo_img: joinedUrls };
-                updateObj.image_url = joinedUrls; // 兼容旧版
-                
-                await client.from('HOMEWORK_TASKS').update(updateObj).eq('id', taskId);
-                loadDashboard(); // 刷新显示所有缩略图
-
-                // 把数组传给 AI
-                callGeminiAI(uploadedUrls, taskId, taskTargetUser);
-                
-            } catch (err) { 
-                window.pendingAITasks.delete(taskId);
-                console.error("上传失败:", err);
-                alert("多图上传失败，请重试"); 
-                loadDashboard();
-            }
-        }
         // ⚠️ 新增接收 taskTargetUser 参数
 async function callGeminiAI(imageUrlsArray, taskId, taskTargetUser) {
             try {
