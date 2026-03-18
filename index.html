@@ -479,7 +479,50 @@ async function doSave(needPush = false) {
                 alert(`保存失败: ${err.message || '未知错误，请检查控制台'}`);
             }
         }        
-        // ⚠️ 新增接收 taskTargetUser 参数
+
+// ⚠️ 这是处理图片上传并触发 AI 的核心函数，请勿遗漏
+        async function handleFileSelect(input, taskId, taskTargetUser) {
+            const files = input.files; 
+            if (!files || files.length === 0) return;
+            
+            try {
+                // UI 优化：添加占位提示状态
+                window.pendingAITasks = window.pendingAITasks || new Set();
+                window.pendingAITasks.add(taskId);
+                loadDashboard(); // 立即刷新，显示“⏳ AI批改中”等待状态
+                
+                const uploadedUrls = [];
+                // 循环上传多张图片
+                for (let i = 0; i < files.length; i++) {
+                    const file = files[i];
+                    const fn = `hw_${taskId}_${currentRole}_${Date.now()}_${i}.jpg`;
+                    await client.storage.from('HOMEWORK_PHOTOS').upload(fn, file);
+                    const { data: urlData } = client.storage.from('HOMEWORK_PHOTOS').getPublicUrl(fn);
+                    uploadedUrls.push(urlData.publicUrl);
+                }
+                
+                // 将多个 URL 用逗号拼接存入数据库
+                const joinedUrls = uploadedUrls.join(',');
+                const updateObj = currentRole === 'dudu' ? { dudu_img: joinedUrls } : { bobo_img: joinedUrls };
+                updateObj.image_url = joinedUrls; // 兼容旧版显示
+                
+                await client.from('HOMEWORK_TASKS').update(updateObj).eq('id', taskId);
+                
+                // 刷新页面，让缩略图先显示出来
+                loadDashboard(); 
+
+                // 核心：把上传好的图片数组传给 AI 进行批改
+                callGeminiAI(uploadedUrls, taskId, taskTargetUser);
+                
+            } catch (err) { 
+                window.pendingAITasks.delete(taskId);
+                console.error("上传失败:", err);
+                alert("多图上传失败，请重试"); 
+                loadDashboard();
+            }
+        }
+        
+        
 async function callGeminiAI(imageUrlsArray, taskId, taskTargetUser) {
             try {
                 const { data, error } = await client.functions.invoke('gemini-review', {
