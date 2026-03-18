@@ -526,8 +526,12 @@ async function doSave(needPush = false) {
 async function callGeminiAI(imageUrlsArray, taskId, taskTargetUser) {
             try {
                 const { data, error } = await client.functions.invoke('gemini-review', {
+                    // 👇 新增这一段 headers 设置，强行带上通行证
+                    headers: {
+                        Authorization: `Bearer ${SB_KEY}`
+                    },
                     body: {
-                        imageUrls: imageUrlsArray, // 传递数组而不是单字符串
+                        imageUrls: imageUrlsArray, 
                         prompt: `
                         角色：你是一位拥有20年教学经验的资深小学导师，擅长极简、精准的作业批改，评价风格直击要点，拒绝冗余。
                         【重要提示】：用户上传了 ${imageUrlsArray.length} 张图片，这可能是一道题的题干和解答分成了多页，或者是连续的多页作业。请务必将所有图片结合起来作为同一个上下文进行综合理解和批改。
