@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>家庭作业管理系统 v3.0</title>
+    <title>家庭作业管理系统 v3.1</title>
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <style>
         :root { --primary-color: #4a90e2; --bg-color: #f5f7fa; --dudu-color: #8b572a; --bobo-color: #666; --del-color: #ff3b30; }
@@ -47,7 +47,8 @@
             <option value="dudu">嘟嘟</option>
             <option value="bobo">啵啵</option>
         </select>
-        <input type="password" id="password" placeholder="访问密码">
+        <!-- 修复1: 增加 onkeypress 事件监听回车键 -->
+        <input type="password" id="password" placeholder="访问密码" onkeypress="if(event.key === 'Enter') doLogin()">
         <button onclick="doLogin()">登 录</button>
     </div>
 
@@ -75,7 +76,7 @@
             </table>
             <button class="btn-add" style="background:#b5b5b5" onclick="addRow('bobo')">+ 增加啵啵作业</button>
 
-            <button id="saveBtn" class="btn-save" onclick="doSave(true)">🚀 发布今日作业并推送微信</button>
+            <button id="saveBtn" class="btn-save" onclick="doSave(true, false)">🚀 发布今日作业并推送微信</button>
         </div>
 
         <div id="studentArea" class="hidden">
@@ -101,10 +102,10 @@
         let viewDate = new Date();
         const getStr = (d) => new Intl.DateTimeFormat('zh-CN', {timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit'}).format(d).replace(/\//g, '-');
 
-        // 离开页面时自动保存（补充防御）
+        // 离开页面时静默保存 (isBackground = true，不打断用户)
         window.addEventListener("visibilitychange", () => {
             if (document.visibilityState === 'hidden' && currentRole === 'admin') {
-                doSave(false);
+                doSave(false, true);
             }
         });
 
@@ -127,9 +128,8 @@
         }
 
         async function changeDate(days) {
-            // 翻动日期前保存当前页面作业
             if (currentRole === 'admin') {
-                await doSave(false);
+                await doSave(false, true); // 翻动日期前静默保存
             }
             viewDate.setDate(viewDate.getDate() + days);
             const today = new Date();
@@ -156,7 +156,6 @@
             document.querySelectorAll('.list-body, #studentBody').forEach(b => b.innerHTML = '');
 
             try {
-                // 拉取该日期下所有数据
                 const { data, error } = await client.from('HOMEWORK_TASKS').select('*').eq('date_str', dateStr).order('id');
                 if (error) throw error;
 
@@ -165,7 +164,6 @@
                     document.getElementById('studentArea').classList.add('hidden');
                     
                     if (dateStr === todayStr || dateStr === tomorrowStr) {
-                        // 兜底逻辑：如果今天没作业，给每个孩子默认创建一条空行
                         if (!data.some(d => d.target_user === 'dudu')) addRow('dudu');
                         if (!data.some(d => d.target_user === 'bobo')) addRow('bobo');
                     }
@@ -173,7 +171,6 @@
                 } else {
                     document.getElementById('adminArea').classList.add('hidden');
                     document.getElementById('studentArea').classList.remove('hidden');
-                    // 过滤出当前登录孩子的专属作业
                     data.filter(d => d.target_user === currentRole).forEach(d => addStaticRow(d, dateStr === todayStr));
                 }
             } catch (err) { console.error(err); }
@@ -183,7 +180,6 @@
             const tbody = document.querySelector(`#tbl-${type} .list-body`);
             const tr = document.createElement('tr');
             
-            // 绑定核心数据到DOM
             if (data && data.id) {
                 tr.dataset.id = data.id;
                 if (data.image_url) tr.dataset.image_url = data.image_url;
@@ -202,7 +198,6 @@
                 <button class="mini-btn btn-del" onclick="deleteTask(this)">删除</button>
             </div>`;
             
-            // AI 评价 UI 更新
             let reviewHtml = '';
             if (data && data.review) {
                 const color = type === 'dudu' ? '#8b572a' : '#666';
@@ -233,42 +228,50 @@
             }
         }
         
-        function toggleQuickStatus(el) {
+        async function toggleQuickStatus(el) {
             el.classList.toggle('status-active');
-            doSave(false); 
+            await doSave(false, false);  // 状态改变后，同步并刷新UI获取ID
         }
 
-        function copyToOther(el, toWho) {
+        async function copyToOther(el, toWho) {
             const tr = el.closest('tr');
             const sub = tr.querySelector('.s-in').value, con = tr.querySelector('.c-in').value;
             if (!con.trim()) return;
+            
             addRow(toWho, {subject: sub, content: con});
-            doSave(false);
+            
+            // 修复2：复制完必须等待 doSave 完成并强制刷新列表，才能让新复制的项拿到数据库分配的真实 ID，防止数据重复。
+            await doSave(false, false); 
         }
 
         async function moveTaskToNextDay(el, fromWho) {
             const tr = el.closest('tr');
             const sub = tr.querySelector('.s-in').value, con = tr.querySelector('.c-in').value;
+            const taskId = tr.dataset.id;
             if (!con.trim()) return;
             
             const nextDay = new Date(viewDate);
             nextDay.setDate(nextDay.getDate() + 1);
             const nextDayStr = getStr(nextDay);
             
-            const { error } = await client.from('HOMEWORK_TASKS').insert({
-                date_str: nextDayStr, subject: sub, content: con, target_user: fromWho, status: false
-            });
-
-            if(!error) {
-                tr.remove();
-                await doSave(false);
-                alert(`✅ 已移至 ${nextDayStr}`);
-            } else { alert("操作失败"); }
+            // 修复：如果此项已存在ID，用 UPDATE 修改日期而不是 INSERT 避免老日期里还留存冗余数据
+            if (taskId && taskId !== "undefined") {
+                const { error } = await client.from('HOMEWORK_TASKS').update({date_str: nextDayStr}).eq('id', taskId);
+                if(error) { alert("操作失败"); return; }
+            } else {
+                const { error } = await client.from('HOMEWORK_TASKS').insert({
+                    date_str: nextDayStr, subject: sub, content: con, target_user: fromWho, status: false
+                });
+                if(error) { alert("操作失败"); return; }
+            }
+            
+            tr.remove();
+            await doSave(false, false);
+            alert(`✅ 已移至 ${nextDayStr}`);
         }
         
         function addStaticRow(d, isToday) {
             const tr = document.createElement('tr');
-            
             let imgHtml = '';
             if (d.image_url) {
                 const urls = d.image_url.split(',');
@@ -280,7 +283,6 @@
             }
             
             const btn = isToday ? `<button type="button" style="width:auto;padding:4px;font-size:10px;background:#5856d6;color:white;border-radius:4px;border:none;" onclick="window.triggerCamera('${d.id}')">📸拍照/上传</button>` : '';
-            
             let contentHtml = `<span>${d.content}</span>`;
             if (window.pendingAITasks.has(d.id)) {
                 contentHtml += `<div style="margin-top:5px; padding:6px; background:#fff8e1; color:#f57c00; font-size:11px; border-radius:4px;">⏳ AI正在批改多页内容，请稍候...</div>`;
@@ -301,7 +303,8 @@
             document.getElementById('studentBody').appendChild(tr);
         }
         
-        async function doSave(needPush = false) {
+        // 新增 isBackground 参数。若为 false，保存后会立刻从数据库拉取新数据渲染界面（绑定ID，修复重复Bug）
+        async function doSave(needPush = false, isBackground = false) {
             if (currentRole !== 'admin') return;
             const dateStr = getStr(viewDate);
             
@@ -322,10 +325,7 @@
                     const taskId = r.dataset.id && r.dataset.id !== "undefined" ? parseInt(r.dataset.id) : null;
                     
                     if (c.trim()) {
-                        const t = { 
-                            date_str: dateStr, subject: s, content: c.trim(), target_user: type 
-                        };
-                        
+                        const t = { date_str: dateStr, subject: s, content: c.trim(), target_user: type };
                         if (r.dataset.image_url) t.image_url = r.dataset.image_url;
                         if (r.dataset.review) t.review = r.dataset.review;
                         t.status = r.querySelector('.status-icon').classList.contains('status-active');
@@ -352,8 +352,10 @@
                     alert("发布成功！");
                 }
                 
-                // 为了确保静默保存不打断用户操作，只在点击发布时刷新页面获取新ID
-                if (needPush) await loadDashboard();
+                // 修复2核心：只要不是离开页面或翻看日期产生的静默保存，每次产生按钮点击(复制/移动/发布)都会强制刷新绑定 ID
+                if (!isBackground) {
+                    await loadDashboard();
+                }
 
             } catch (err) { 
                 console.error("保存失败:", err);
