@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>家庭作业管理系统 v2.7</title>
+    <title>家庭作业管理系统 v3.0</title>
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <style>
         :root { --primary-color: #4a90e2; --bg-color: #f5f7fa; --dudu-color: #8b572a; --bobo-color: #666; --del-color: #ff3b30; }
@@ -23,14 +23,12 @@
         td, th { border: 1px solid #eee; padding: 5px 3px; font-size: 11px; text-align: left; }
         th { background: #fafafa; }
         
-        .status-col { display: flex; flex-direction: column; gap: 4px; align-items: center; }
         .status-row { display: flex; align-items: center; gap: 4px; justify-content: center; font-size: 16px; }
         .status-icon { cursor: pointer; filter: grayscale(1); opacity: 0.3; transition: 0.2s; }
         .status-active { filter: grayscale(0); opacity: 1; }
 
         .action-col { display: flex; flex-direction: column; gap: 2px; }
         .mini-btn { width: 100%; padding: 4px 0; font-size: 10px; margin: 0; border-radius: 4px; line-height: 1.2; }
-        .btn-move { background: #5bc0de; }
         .btn-copy { background: #5cb85c; } 
         .btn-move-tmr { background: #f0ad4e; }
         .btn-del { background: var(--del-color); }
@@ -63,26 +61,19 @@
         <p style="font-size:11px; color:#666; text-align:center; margin-bottom:12px;">用户: <span id="userDisplay" style="font-weight:bold"></span> | <a href="javascript:location.reload()">退出</a></p>
         
         <div id="adminArea" class="hidden">
-            <h3 style="border-color:#ff9500;color:#e67e22">📋 1. 通用作业</h3>
-            <table id="tbl-all">
-                <thead><tr><th width="32%">科目</th><th width="32%">内容</th><th width="18%">状态</th><th width="18%">操作</th></tr></thead>
-                <tbody class="list-body"></tbody>
-            </table>
-            <button class="btn-add" onclick="addRow('all')">+ 增加通用项</button>
-
-            <h3 style="border-color:var(--dudu-color);color:var(--dudu-color)">👦🏼 2. 嘟嘟专属</h3>
+            <h3 style="border-color:var(--dudu-color);color:var(--dudu-color)">👦🏼 1. 嘟嘟专属</h3>
             <table id="tbl-dudu">
                 <thead><tr><th width="32%">科目</th><th width="32%">内容</th><th width="18%">状态</th><th width="18%">操作</th></tr></thead>
                 <tbody class="list-body"></tbody>
             </table>
-            <button class="btn-add" style="background:var(--dudu-color)" onclick="addRow('dudu')">+ 增加专属</button>
+            <button class="btn-add" style="background:var(--dudu-color)" onclick="addRow('dudu')">+ 增加嘟嘟作业</button>
 
-            <h3 style="border-color:#999;color:#666">👦🏻 3. 啵啵专属</h3>
+            <h3 style="border-color:#999;color:#666">👦🏻 2. 啵啵专属</h3>
             <table id="tbl-bobo">
                 <thead><tr><th width="32%">科目</th><th width="32%">内容</th><th width="18%">状态</th><th width="18%">操作</th></tr></thead>
                 <tbody class="list-body"></tbody>
             </table>
-            <button class="btn-add" style="background:#b5b5b5" onclick="addRow('bobo')">+ 增加专属</button>
+            <button class="btn-add" style="background:#b5b5b5" onclick="addRow('bobo')">+ 增加啵啵作业</button>
 
             <button id="saveBtn" class="btn-save" onclick="doSave(true)">🚀 发布今日作业并推送微信</button>
         </div>
@@ -102,34 +93,25 @@
 
         const client = window.supabase.createClient(SB_URL, SB_KEY);
         const users = {'admin':'admin', 'dudu':'dudu', 'bobo':'bobo'};
-        const subjects = ["学而思数学", "乐读数学", "乐读英语", "乐读语文", "校内作业", "集训队", "其他"];
+        const subjects =["学而思数学", "乐读数学", "乐读英语", "乐读语文", "校内作业", "集训队", "其他"];
         
-        // 增加一个状态集合，用于记录哪些任务正在被 AI 批改，优化用户体验
         window.pendingAITasks = new Set();
-
-        const defaultCommonTasks = [
-            {s: "学而思数学", c: "数感小超市"},
-           // {s: "乐读数学", c: "乐读小超市"},
-            {s: "乐读英语", c: "单词小超市"},
-            {s: "乐读语文", c: "小花园"}
-           // {s: "乐读语文", c: "生字描红本"}
-        ];
 
         let currentRole = '';
         let viewDate = new Date();
         const getStr = (d) => new Intl.DateTimeFormat('zh-CN', {timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit'}).format(d).replace(/\//g, '-');
 
-        // 确保全局变量存在，避免报错
-        window.pendingAITasks = window.pendingAITasks || new Set();
+        // 离开页面时自动保存（补充防御）
+        window.addEventListener("visibilitychange", () => {
+            if (document.visibilityState === 'hidden' && currentRole === 'admin') {
+                doSave(false);
+            }
+        });
 
-        // 唤起相机的核心函数
         window.triggerCamera = function(id) {
             const camInput = document.getElementById('cam-' + id);
-            if (camInput) {
-                camInput.click(); // 模拟点击隐藏的 input
-            } else {
-                alert("未找到上传控件，请刷新页面重试！");
-            }
+            if (camInput) camInput.click();
+            else alert("未找到上传控件，请刷新页面重试！");
         }; 
         
         function doLogin() {
@@ -145,6 +127,7 @@
         }
 
         async function changeDate(days) {
+            // 翻动日期前保存当前页面作业
             if (currentRole === 'admin') {
                 await doSave(false);
             }
@@ -173,28 +156,25 @@
             document.querySelectorAll('.list-body, #studentBody').forEach(b => b.innerHTML = '');
 
             try {
-                // 按日期拉取数据
+                // 拉取该日期下所有数据
                 const { data, error } = await client.from('HOMEWORK_TASKS').select('*').eq('date_str', dateStr).order('id');
                 if (error) throw error;
 
                 if (isAdmin) {
                     document.getElementById('adminArea').classList.remove('hidden');
                     document.getElementById('studentArea').classList.add('hidden');
-                    const hasCommon = data.some(d => d.target_user === 'all');
-                    if (hasCommon) {
-                        data.forEach(d => addRow(d.target_user || 'all', d));
-                    } else if (dateStr === todayStr || dateStr === tomorrowStr) {
-                        defaultCommonTasks.forEach(t => addRow('all', {subject:t.s, content:t.c}));
-                        data.filter(d => d.target_user !== 'all').forEach(d => addRow(d.target_user, d));
+                    
+                    if (dateStr === todayStr || dateStr === tomorrowStr) {
+                        // 兜底逻辑：如果今天没作业，给每个孩子默认创建一条空行
                         if (!data.some(d => d.target_user === 'dudu')) addRow('dudu');
                         if (!data.some(d => d.target_user === 'bobo')) addRow('bobo');
-                    } else {
-                        data.forEach(d => addRow(d.target_user || 'all', d));
                     }
+                    data.forEach(d => addRow(d.target_user, d));
                 } else {
                     document.getElementById('adminArea').classList.add('hidden');
                     document.getElementById('studentArea').classList.remove('hidden');
-                    data.filter(d => d.target_user === 'all' || d.target_user === currentRole).forEach(d => addStaticRow(d, dateStr === todayStr));
+                    // 过滤出当前登录孩子的专属作业
+                    data.filter(d => d.target_user === currentRole).forEach(d => addStaticRow(d, dateStr === todayStr));
                 }
             } catch (err) { console.error(err); }
         }
@@ -203,53 +183,35 @@
             const tbody = document.querySelector(`#tbl-${type} .list-body`);
             const tr = document.createElement('tr');
             
-            // 【重要】将重要数据绑定到 DOM，防止管理员执行 doSave() 覆盖丢失孩子图片和 AI 评价
+            // 绑定核心数据到DOM
             if (data && data.id) {
                 tr.dataset.id = data.id;
                 if (data.image_url) tr.dataset.image_url = data.image_url;
-                if (data.dudu_img) tr.dataset.dudu_img = data.dudu_img;
-                if (data.bobo_img) tr.dataset.bobo_img = data.bobo_img;
-                if (data.dudu_review) tr.dataset.dudu_review = data.dudu_review;
-                if (data.bobo_review) tr.dataset.bobo_review = data.bobo_review;
+                if (data.review) tr.dataset.review = data.review;
             }
 
             let opts = subjects.map(s => `<option value="${s}" ${(data && data.subject === s) ? 'selected' : ''}>${s}</option>`).join('');
             
-            let statusHtml = '';
-            if (type === 'all') {
-                statusHtml = `<div class="status-col">
-                    <div class="status-row"><span>👦🏼</span><span class="status-icon ${data?.dudu_status?'status-active':''}" onclick="toggleQuickStatus(this)">✅</span></div>
-                    <div class="status-row"><span>👦🏻</span><span class="status-icon ${data?.bobo_status?'status-active':''}" onclick="toggleQuickStatus(this)">✅</span></div>
-                </div>`;
-            } else {
-                statusHtml = `<div class="status-row"><span>${type==='dudu'?'👦🏼':'👦🏻'}</span><span class="status-icon ${data?.status?'status-active':''}" onclick="toggleQuickStatus(this)">✅</span></div>`;
-            }
+            let statusHtml = `<div class="status-row"><span>${type==='dudu'?'👦🏼':'👦🏻'}</span><span class="status-icon ${data?.status?'status-active':''}" onclick="toggleQuickStatus(this)">✅</span></div>`;
 
-            let actionHtml = `<div class="action-col">`;
-            if (type === 'all') {
-                actionHtml += `<button class="mini-btn btn-move" onclick="moveTask(this, 'dudu')">➡嘟专属</button>`;
-                actionHtml += `<button class="mini-btn btn-move" onclick="moveTask(this, 'bobo')">➡啵专属</button>`;
-            } else {
-                const targetName = type === 'dudu' ? '啵啵' : '嘟嘟';
-                const targetKey = type === 'dudu' ? 'bobo' : 'dudu';
-                actionHtml += `<button class="mini-btn btn-copy" onclick="copyToOther(this, '${targetKey}')">👯加给${targetName}</button>`;
-                actionHtml += `<button class="mini-btn btn-move-tmr" onclick="moveTaskToNextDay(this, '${type}')">📅移后一天</button>`;
-            }
-            actionHtml += `<button class="mini-btn btn-del" onclick="deleteTask(this)">删除</button></div>`;
+            const targetName = type === 'dudu' ? '啵啵' : '嘟嘟';
+            const targetKey = type === 'dudu' ? 'bobo' : 'dudu';
+            let actionHtml = `<div class="action-col">
+                <button class="mini-btn btn-copy" onclick="copyToOther(this, '${targetKey}')">👯加给${targetName}</button>
+                <button class="mini-btn btn-move-tmr" onclick="moveTaskToNextDay(this, '${type}')">📅移后一天</button>
+                <button class="mini-btn btn-del" onclick="deleteTask(this)">删除</button>
+            </div>`;
             
-            // 【UI更新】管理员也能在下方看到 AI 批改的结果
+            // AI 评价 UI 更新
             let reviewHtml = '';
-            if (data) {
-                if ((type === 'all' || type === 'dudu') && data.dudu_review) {
-                    reviewHtml += `<div style="font-size:10px; color:#8b572a; margin-top:4px; background:#fff3e0; padding:4px; border-radius:3px; white-space: pre-wrap;">👦🏼 ${data.dudu_review}</div>`;
-                }
-                if ((type === 'all' || type === 'bobo') && data.bobo_review) {
-                    reviewHtml += `<div style="font-size:10px; color:#666; margin-top:4px; background:#f5f5f5; padding:4px; border-radius:3px; white-space: pre-wrap;">👦🏻 ${data.bobo_review}</div>`;
-                }
-                // AI 批改进行中的提示
-                if (window.pendingAITasks.has(data.id)) {
-                    reviewHtml += `<div style="font-size:10px; color:#f57c00; margin-top:4px;">⏳ AI批改中...</div>`;
-                }
+            if (data && data.review) {
+                const color = type === 'dudu' ? '#8b572a' : '#666';
+                const bg = type === 'dudu' ? '#fff3e0' : '#f5f5f5';
+                const icon = type === 'dudu' ? '👦🏼' : '👦🏻';
+                reviewHtml += `<div style="font-size:10px; color:${color}; margin-top:4px; background:${bg}; padding:4px; border-radius:3px; white-space: pre-wrap;">${icon} ${data.review}</div>`;
+            }
+            if (window.pendingAITasks.has(data?.id)) {
+                reviewHtml += `<div style="font-size:10px; color:#f57c00; margin-top:4px;">⏳ AI批改中...</div>`;
             }
 
             tr.innerHTML = `<td><select class="s-in">${opts}</select></td>
@@ -258,21 +220,16 @@
                             <td>${actionHtml}</td>`;
             tbody.appendChild(tr);
         }
-async function deleteTask(btn) {
+
+        async function deleteTask(btn) {
             const tr = btn.closest('tr');
             const taskId = tr.dataset.id;
-            
             if (confirm("确定要删除这项作业吗？")) {
                 if (taskId) {
-                    // 如果数据库里已经有这一条，执行物理删除
                     const { error } = await client.from('HOMEWORK_TASKS').delete().eq('id', taskId);
-                    if (error) {
-                        alert("删除失败: " + error.message);
-                        return;
-                    }
+                    if (error) { alert("删除失败: " + error.message); return; }
                 }
-                tr.remove(); // 移除界面元素
-                // 物理删除后不需要再调用 doSave，因为数据库已经同步了
+                tr.remove(); 
             }
         }
         
@@ -289,15 +246,7 @@ async function deleteTask(btn) {
             doSave(false);
         }
 
-        function moveTask(el, toWho) {
-            const tr = el.closest('tr');
-            const sub = tr.querySelector('.s-in').value, con = tr.querySelector('.c-in').value;
-            if (!con.trim()) return;
-            addRow(toWho, {subject: sub, content: con});
-            doSave(false); 
-        }
-
-async function moveTaskToNextDay(el, fromWho) {
+        async function moveTaskToNextDay(el, fromWho) {
             const tr = el.closest('tr');
             const sub = tr.querySelector('.s-in').value, con = tr.querySelector('.c-in').value;
             if (!con.trim()) return;
@@ -306,94 +255,65 @@ async function moveTaskToNextDay(el, fromWho) {
             nextDay.setDate(nextDay.getDate() + 1);
             const nextDayStr = getStr(nextDay);
             
-            // 插入新任务
             const { error } = await client.from('HOMEWORK_TASKS').insert({
-                date_str: nextDayStr, 
-                subject: sub, 
-                content: con, 
-                target_user: fromWho, 
-                status: false
+                date_str: nextDayStr, subject: sub, content: con, target_user: fromWho, status: false
             });
 
             if(!error) {
-                // 成功移走后，删除当前行并保存当前页
                 tr.remove();
                 await doSave(false);
                 alert(`✅ 已移至 ${nextDayStr}`);
-            } else {
-                alert("操作失败");
-            }
+            } else { alert("操作失败"); }
         }
         
         function addStaticRow(d, isToday) {
             const tr = document.createElement('tr');
             
-            // 准确获取对应角色的图片（支持解析逗号分隔的多图 URL）
-            const imgRaw = currentRole === 'dudu' ? (d.dudu_img || d.image_url) : (d.bobo_img || d.image_url);
             let imgHtml = '';
-            if (imgRaw) {
-                const urls = imgRaw.split(',');
+            if (d.image_url) {
+                const urls = d.image_url.split(',');
                 urls.forEach(url => {
                     if (url.trim()) {
-                        // 增加 max-width 避免多图把表格撑爆
                         imgHtml += `<img src="${url.trim()}" class="img-preview" style="margin-right:2px; margin-bottom:2px; max-width: 50px; cursor: pointer;" onclick="window.open('${url.trim()}')">`;
                     }
                 });
             }
             
-            // 【修复点】：增加 type="button" 防止刷新，强化 onclick 的传参兼容性
             const btn = isToday ? `<button type="button" style="width:auto;padding:4px;font-size:10px;background:#5856d6;color:white;border-radius:4px;border:none;" onclick="window.triggerCamera('${d.id}')">📸拍照/上传</button>` : '';
             
-            let myStatus = false;
-            let myReview = '';
-            
-            if (currentRole === 'dudu') {
-                myStatus = d.target_user === 'all' ? d.dudu_status : d.status;
-                myReview = d.dudu_review || '';
-            } else if (currentRole === 'bobo') {
-                myStatus = d.target_user === 'all' ? d.bobo_status : d.status;
-                myReview = d.bobo_review || '';
-            }
-
             let contentHtml = `<span>${d.content}</span>`;
-            
-            // 【修复点】：防御性检查，防止 Set 未初始化报错
-            window.pendingAITasks = window.pendingAITasks || new Set();
             if (window.pendingAITasks.has(d.id)) {
                 contentHtml += `<div style="margin-top:5px; padding:6px; background:#fff8e1; color:#f57c00; font-size:11px; border-radius:4px;">⏳ AI正在批改多页内容，请稍候...</div>`;
-            } else if (myReview) {
-                contentHtml += `<div style="margin-top:5px; padding:6px; background:#f0f8ff; border-left:3px solid #4a90e2; border-radius:4px; font-size:11px; color:#333; white-space: pre-wrap;">🤖 <b>AI批改:</b><br>${myReview}</div>`;
+            } else if (d.review) {
+                contentHtml += `<div style="margin-top:5px; padding:6px; background:#f0f8ff; border-left:3px solid #4a90e2; border-radius:4px; font-size:11px; color:#333; white-space: pre-wrap;">🤖 <b>AI批改:</b><br>${d.review}</div>`;
             }
 
-            // 【修复点】：input 标签的 id 严格对应 triggerCamera，并加上 multiple 支持多图
             tr.innerHTML = `
                 <td>${d.subject}</td>
                 <td>${contentHtml}</td>
-                <td style="text-align:center">${myStatus?'🟢':'⚪'}</td>
+                <td style="text-align:center">${d.status ? '🟢':'⚪'}</td>
                 <td>
                     <div style="display:flex; flex-wrap:wrap;">${imgHtml}</div>
                     ${btn}
-                    <input type="file" id="cam-${d.id}" accept="image/*" multiple style="display:none" onchange="handleFileSelect(this, ${d.id}, '${d.target_user}')">
+                    <input type="file" id="cam-${d.id}" accept="image/*" multiple style="display:none" onchange="handleFileSelect(this, ${d.id})">
                 </td>
             `;
             document.getElementById('studentBody').appendChild(tr);
         }
         
-async function doSave(needPush = false) {
+        async function doSave(needPush = false) {
+            if (currentRole !== 'admin') return;
             const dateStr = getStr(viewDate);
             
-            // 【核心修复】：将需要新增、更新、删除的任务分装到不同的数组
-            const tasksToInsert = [];
+            const tasksToInsert =[];
             const tasksToUpdate = [];
-            const tasksToDelete = []; 
-            
+            const tasksToDelete =[]; 
             let pushText = `📅 **日期: ${dateStr}**\n\n`;
 
-            // 1. 遍历三个表格收集数据
-            ['all', 'dudu', 'bobo'].forEach(type => {
+            ['dudu', 'bobo'].forEach(type => {
                 const rows = document.querySelectorAll(`#tbl-${type} .list-body tr`);
                 let sectHasData = false;
-                const titleMap = { 'all': '📋 通用作业', 'dudu': '👦🏼 嘟嘟专属', 'bobo': '👦🏻 啵啵专属' };
+                const titleMap = { 'dudu': '👦🏼 嘟嘟专属', 'bobo': '👦🏻 啵啵专属' };
                 let sectContent = "";
 
                 rows.forEach(r => {
@@ -403,39 +323,19 @@ async function doSave(needPush = false) {
                     
                     if (c.trim()) {
                         const t = { 
-                            date_str: dateStr, 
-                            subject: s, 
-                            content: c.trim(), 
-                            target_user: type 
+                            date_str: dateStr, subject: s, content: c.trim(), target_user: type 
                         };
                         
-                        // 保留照片数据和 AI 评价
                         if (r.dataset.image_url) t.image_url = r.dataset.image_url;
-                        if (r.dataset.dudu_img) t.dudu_img = r.dataset.dudu_img;
-                        if (r.dataset.bobo_img) t.bobo_img = r.dataset.bobo_img;
-                        if (r.dataset.dudu_review) t.dudu_review = r.dataset.dudu_review;
-                        if (r.dataset.bobo_review) t.bobo_review = r.dataset.bobo_review;
-
-                        // 处理完成状态
-                        if (type === 'all') {
-                            t.dudu_status = r.querySelector('.status-row:nth-child(1) .status-icon').classList.contains('status-active');
-                            t.bobo_status = r.querySelector('.status-row:nth-child(2) .status-icon').classList.contains('status-active');
-                        } else {
-                            t.status = r.querySelector('.status-icon').classList.contains('status-active');
-                        }
+                        if (r.dataset.review) t.review = r.dataset.review;
+                        t.status = r.querySelector('.status-icon').classList.contains('status-active');
                         
-                        // 【核心修复】：判断是已有数据还是新数据
-                        if (taskId) {
-                            t.id = taskId;
-                            tasksToUpdate.push(t);
-                        } else {
-                            tasksToInsert.push(t);
-                        }
+                        if (taskId) { t.id = taskId; tasksToUpdate.push(t); } 
+                        else { tasksToInsert.push(t); }
                         
                         sectContent += `☑️ **${s}**: ${c.trim()}\n\n`;
                         sectHasData = true;
                     } else if (taskId) {
-                        // 如果用户清空了文本框，并且这是个老数据，说明用户想删掉它
                         tasksToDelete.push(taskId);
                     }
                 });
@@ -443,56 +343,32 @@ async function doSave(needPush = false) {
             });
 
             try {
-                // 2. 分别执行数据库操作，避免因 Key 结构不一致导致的报错
+                if (tasksToDelete.length > 0) await client.from('HOMEWORK_TASKS').delete().in('id', tasksToDelete);
+                if (tasksToInsert.length > 0) await client.from('HOMEWORK_TASKS').insert(tasksToInsert);
+                if (tasksToUpdate.length > 0) await client.from('HOMEWORK_TASKS').upsert(tasksToUpdate, { onConflict: 'id' });
                 
-                // 执行删除（清空了文本框的旧作业）
-                if (tasksToDelete.length > 0) {
-                    const { error } = await client.from('HOMEWORK_TASKS').delete().in('id', tasksToDelete);
-                    if (error) throw error;
-                }
-                
-                // 执行新增（完全没有 ID 的新作业）
-                if (tasksToInsert.length > 0) {
-                    const { error } = await client.from('HOMEWORK_TASKS').insert(tasksToInsert);
-                    if (error) throw error;
-                }
-                
-                // 执行更新（已有 ID 的作业）
-                if (tasksToUpdate.length > 0) {
-                    const { error } = await client.from('HOMEWORK_TASKS').upsert(tasksToUpdate, { onConflict: 'id' });
-                    if (error) throw error;
-                }
-                
-                // 3. 微信推送
                 if (needPush && SERVER_CHAN_KEY.startsWith("SCT")) {
                     await fetch(`https://sctapi.ftqq.com/${SERVER_CHAN_KEY}.send?title=${encodeURIComponent("🔔 作业提醒: " + dateStr)}&desp=${encodeURIComponent(pushText)}`, {mode:'no-cors'});
                     alert("发布成功！");
-                } else if (!needPush) {
-                    console.log("后台静默同步成功");
                 }
                 
-                // 4. 保存后重新加载，确保所有行都获得了数据库分配的最新 ID
-                await loadDashboard();
+                // 为了确保静默保存不打断用户操作，只在点击发布时刷新页面获取新ID
+                if (needPush) await loadDashboard();
 
             } catch (err) { 
-                console.error("保存失败详情:", err);
-                alert(`保存失败: ${err.message || '未知错误，请检查控制台'}`);
+                console.error("保存失败:", err);
             }
         }        
 
-// ⚠️ 这是处理图片上传并触发 AI 的核心函数，请勿遗漏
-        async function handleFileSelect(input, taskId, taskTargetUser) {
+        async function handleFileSelect(input, taskId) {
             const files = input.files; 
             if (!files || files.length === 0) return;
             
             try {
-                // UI 优化：添加占位提示状态
-                window.pendingAITasks = window.pendingAITasks || new Set();
                 window.pendingAITasks.add(taskId);
-                loadDashboard(); // 立即刷新，显示“⏳ AI批改中”等待状态
+                loadDashboard(); 
                 
-                const uploadedUrls = [];
-                // 循环上传多张图片
+                const uploadedUrls =[];
                 for (let i = 0; i < files.length; i++) {
                     const file = files[i];
                     const fn = `hw_${taskId}_${currentRole}_${Date.now()}_${i}.jpg`;
@@ -501,41 +377,28 @@ async function doSave(needPush = false) {
                     uploadedUrls.push(urlData.publicUrl);
                 }
                 
-                // 将多个 URL 用逗号拼接存入数据库
                 const joinedUrls = uploadedUrls.join(',');
-                const updateObj = currentRole === 'dudu' ? { dudu_img: joinedUrls } : { bobo_img: joinedUrls };
-                updateObj.image_url = joinedUrls; // 兼容旧版显示
+                await client.from('HOMEWORK_TASKS').update({ image_url: joinedUrls }).eq('id', taskId);
                 
-                await client.from('HOMEWORK_TASKS').update(updateObj).eq('id', taskId);
-                
-                // 刷新页面，让缩略图先显示出来
                 loadDashboard(); 
-
-                // 核心：把上传好的图片数组传给 AI 进行批改
-                callGeminiAI(uploadedUrls, taskId, taskTargetUser);
+                callGeminiAI(uploadedUrls, taskId);
                 
             } catch (err) { 
                 window.pendingAITasks.delete(taskId);
-                console.error("上传失败:", err);
                 alert("多图上传失败，请重试"); 
                 loadDashboard();
             }
         }
         
-        
-// ⚠️ 新增接收 taskTargetUser 参数
-        async function callGeminiAI(imageUrlsArray, taskId, taskTargetUser) {
+        async function callGeminiAI(imageUrlsArray, taskId) {
             try {
                 const { data, error } = await client.functions.invoke('gemini-review', {
-                    // 👇 【关键修复】：强行附带你的 SB_KEY 作为请求的通行证
-                    headers: {
-                        Authorization: `Bearer ${SB_KEY}`
-                    },
+                    headers: { Authorization: `Bearer ${SB_KEY}` },
                     body: {
-                        imageUrls: imageUrlsArray, // 传递数组而不是单字符串
+                        imageUrls: imageUrlsArray,
                         prompt: `
                         角色：你是一位拥有20年教学经验的资深小学导师，擅长极简、精准的作业批改，评价风格直击要点，拒绝冗余。
-                        【重要提示】：用户上传了 ${imageUrlsArray.length} 张图片，这可能是一道题的题干和解答分成了多页，或者是连续的多页作业。请务必将所有图片结合起来作为同一个上下文进行综合理解和批改。
+                        【重要提示】：用户上传了 ${imageUrlsArray.length} 张图片，请将所有图片结合起来作为同一个上下文进行综合理解和批改。
                         
                         任务：请识别并批改上传的图片（仅限：数学、语文、英语、日记之一）。
                         
@@ -554,21 +417,10 @@ async function doSave(needPush = false) {
                 if (error) throw error;
                 
                 if (data && data.text) {
-                    const reviewField = currentRole === 'dudu' ? 'dudu_review' : 'bobo_review';
-                    const updateObj = { [reviewField]: data.text };
-
-                    if (taskTargetUser === 'all') {
-                        const statusField = currentRole === 'dudu' ? 'dudu_status' : 'bobo_status';
-                        updateObj[statusField] = true;
-                    } else {
-                        updateObj.status = true;
-                    }
-
-                    await client.from('HOMEWORK_TASKS').update(updateObj).eq('id', taskId);
+                    await client.from('HOMEWORK_TASKS').update({ review: data.text, status: true }).eq('id', taskId);
                 }
             } catch (err) { 
-                console.error("Gemini 批改过程异常:", err); 
-                alert("AI 批改请求被拒绝，请检查网络或 Supabase 后台的 JWT 验证设置");
+                console.error("AI 批改异常:", err); 
             } finally {
                 window.pendingAITasks.delete(taskId);
                 loadDashboard();
